@@ -17,7 +17,7 @@ This document contains the **complete, ordered prompt sequence** and **acceptanc
 You are building an MVP for Backtrack.
 
 Hard constraints:
-- Stack: Next.js (TypeScript) single web app for host + phone + Node.js (TypeScript) Socket.IO realtime server.
+- Stack: Next.js (TypeScript) single web app for host + phone + Node.js (v24.13.0 LTS; TypeScript) Socket.IO realtime server.
 - Local dev only: host laptop + phones on same LAN.
 - In-memory room state only. No database. Static seed JSON deck.
 - No Backtrack user accounts or auth.

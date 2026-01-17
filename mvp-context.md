@@ -20,7 +20,7 @@ It supersedes any earlier Spotify-based MVP context.
 - Client roles are **Host** and **Player**
 - For the MVP, device constraints are enforced:
   - **Host** must use a desktop or laptop browser.
-  - **Players** ust join from phones (mobile browsers)**.
+  - **Players** must join from phones (mobile browsers)**.
   - Desktop browsers are **not allowed** to join as players.
   - This restriction exists to simplify UX and interaction design for the MVP.
 
@@ -28,7 +28,7 @@ It supersedes any earlier Spotify-based MVP context.
 
 ## Explicit Non-Goals (MVP)
 
-- No timers beyond basic turn flow (no global countdown enforcement).
+- No advanced timers beyond per-turn countdown.
 - No database.
 - No user authentication.
 - No payments, telemetry, analytics, or cloud storage.
