@@ -1,14 +1,18 @@
+<!-- This is an example of single-player implementation of Backtrack using the iTunes Search API. -->
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Backtrack: Single Player</title>
-    
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
-    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@700;800&display=swap"
+        rel="stylesheet">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -35,14 +39,27 @@
 
     <style>
         /* Custom Styles for interactions */
-        body { background-color: #0B0C10; }
-        
+        body {
+            background-color: #0B0C10;
+        }
+
         /* Card Flip Animation */
-        .perspective-1000 { perspective: 1000px; }
-        .transform-style-3d { transform-style: preserve-3d; }
-        .backface-hidden { backface-visibility: hidden; }
-        .rotate-y-180 { transform: rotateY(180deg); }
-        
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+
+        .transform-style-3d {
+            transform-style: preserve-3d;
+        }
+
+        .backface-hidden {
+            backface-visibility: hidden;
+        }
+
+        .rotate-y-180 {
+            transform: rotateY(180deg);
+        }
+
         /* Lock Button Progress */
         .btn-progress {
             width: 0%;
@@ -50,71 +67,96 @@
         }
 
         /* Vinyl Spin Animation */
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-        .spin-slow { animation: spin 4s linear infinite; }
-        .paused { animation-play-state: paused; }
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spin-slow {
+            animation: spin 4s linear infinite;
+        }
+
+        .paused {
+            animation-play-state: paused;
+        }
 
         /* Scrollbar hiding for cleaner UI */
-        .hide-scroll::-webkit-scrollbar { display: none; }
-        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        .hide-scroll::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scroll {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
     </style>
 </head>
+
 <body class="text-gray-300 font-sans h-screen flex flex-col overflow-hidden selection:bg-indigo selection:text-white">
 
     <header class="h-20 border-b border-white/10 flex items-center justify-between px-8 bg-void z-10">
         <div class="flex items-center gap-3">
             <h1 class="font-display text-3xl text-white tracking-tight">Backtrack</h1>
-            <span class="bg-indigo/20 text-indigo text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Solo</span>
+            <span
+                class="bg-indigo/20 text-indigo text-xs font-bold px-2 py-1 rounded uppercase tracking-wider">Solo</span>
         </div>
         <div class="flex items-center gap-4">
             <div class="text-right">
                 <p class="text-xs text-gray-500 uppercase font-bold tracking-wider">Timeline</p>
-                <p class="text-2xl font-display text-white"><span id="scoreDisplay">0</span> <span class="text-indigo">/ 10</span></p>
+                <p class="text-2xl font-display text-white"><span id="scoreDisplay">0</span> <span class="text-indigo">/
+                        10</span></p>
             </div>
         </div>
     </header>
 
     <main class="flex-1 flex flex-col relative">
-        
+
         <div class="flex-1 flex flex-col justify-center items-center bg-void relative">
             <div class="w-full h-full flex items-center overflow-x-auto hide-scroll px-12" id="timelineContainer">
                 <div id="timelineList" class="flex gap-4 items-center min-w-full p-8 transition-all">
-                    </div>
+                </div>
             </div>
-            
+
             <div class="absolute w-full h-px bg-white/10 -z-0 pointer-events-none"></div>
             <div class="absolute left-4 bottom-4 text-xs font-mono text-gray-600">OLDEST</div>
             <div class="absolute right-4 bottom-4 text-xs font-mono text-gray-600">NEWEST</div>
         </div>
 
-        <div class="h-72 bg-surface border-t border-white/10 flex flex-col items-center justify-center relative p-6 shadow-2xl z-20">
-            
+        <div
+            class="h-72 bg-surface border-t border-white/10 flex flex-col items-center justify-center relative p-6 shadow-2xl z-20">
+
             <div class="absolute top-0 left-0 w-full h-2 bg-gray-700">
-                <div id="turnProgressBar" class="h-full bg-indigo transition-all duration-100 ease-linear" style="width: 100%"></div>
+                <div id="turnProgressBar" class="h-full bg-indigo transition-all duration-100 ease-linear"
+                    style="width: 100%"></div>
             </div>
 
             <div id="gameControls" class="flex w-full max-w-5xl gap-8 items-center justify-center">
-                
+
                 <div class="w-64 text-center hidden" id="statusPanel">
                     <h3 class="text-white font-display text-xl mb-1" id="statusTitle">Listen...</h3>
                     <p class="text-sm text-gray-400" id="statusMessage">Drag the card to the timeline</p>
                     <div class="mt-4 font-mono text-2xl" id="timerText">00.0s</div>
                 </div>
 
-                <div id="stagingZone" class="w-48 h-48 flex-shrink-0 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center bg-void/50">
-                    <span class="text-xs text-gray-500 font-bold uppercase tracking-wider pointer-events-none">Current Card</span>
+                <div id="stagingZone"
+                    class="w-48 h-48 flex-shrink-0 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center bg-void/50">
+                    <span class="text-xs text-gray-500 font-bold uppercase tracking-wider pointer-events-none">Current
+                        Card</span>
                 </div>
 
                 <div class="w-64 flex flex-col items-center gap-4">
                     <div id="playerUI" class="flex items-center gap-4 opacity-50 transition-opacity">
-                        <img id="vinylArt" src="https://placehold.co/100x100/1F2937/FFFFFF?text=Music" class="w-16 h-16 rounded-full border-2 border-white/10 spin-slow paused shadow-lg">
+                        <img id="vinylArt" src="https://placehold.co/100x100/1F2937/FFFFFF?text=Music"
+                            class="w-16 h-16 rounded-full border-2 border-white/10 spin-slow paused shadow-lg">
                         <div class="text-left">
                             <div class="h-2 w-24 bg-gray-700 rounded mb-2 animate-pulse"></div>
                             <div class="h-2 w-16 bg-gray-700 rounded animate-pulse"></div>
                         </div>
                     </div>
 
-                    <button id="lockBtn" class="relative overflow-hidden group w-full bg-white text-void font-display font-bold text-lg py-4 rounded-xl shadow-lg transform transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button id="lockBtn"
+                        class="relative overflow-hidden group w-full bg-white text-void font-display font-bold text-lg py-4 rounded-xl shadow-lg transform transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                         <span class="relative z-10 pointer-events-none">HOLD TO LOCK</span>
                         <div id="lockBtnFill" class="absolute top-0 left-0 h-full bg-indigo btn-progress z-0"></div>
                     </button>
@@ -122,21 +164,26 @@
                 </div>
             </div>
 
-            <div id="startScreen" class="absolute inset-0 bg-void/95 backdrop-blur-sm flex items-center justify-center z-50">
+            <div id="startScreen"
+                class="absolute inset-0 bg-void/95 backdrop-blur-sm flex items-center justify-center z-50">
                 <div class="text-center">
                     <h2 class="font-display text-5xl text-white mb-6">Ready?</h2>
-                    <p class="text-gray-400 mb-8 max-w-md mx-auto">Turn up your volume. Arrange 10 songs in chronological order to win.</p>
-                    <button onclick="Game.init()" class="bg-indigo hover:bg-indigo-hover text-white font-display font-bold text-xl px-12 py-4 rounded-full shadow-xl shadow-indigo/20 transition transform hover:scale-105">
+                    <p class="text-gray-400 mb-8 max-w-md mx-auto">Turn up your volume. Arrange 10 songs in
+                        chronological order to win.</p>
+                    <button onclick="Game.init()"
+                        class="bg-indigo hover:bg-indigo-hover text-white font-display font-bold text-xl px-12 py-4 rounded-full shadow-xl shadow-indigo/20 transition transform hover:scale-105">
                         Start Game
                     </button>
                 </div>
             </div>
-            
-             <div id="winScreen" class="hidden absolute inset-0 bg-indigo/95 backdrop-blur-sm flex items-center justify-center z-50">
+
+            <div id="winScreen"
+                class="hidden absolute inset-0 bg-indigo/95 backdrop-blur-sm flex items-center justify-center z-50">
                 <div class="text-center">
                     <h2 class="font-display text-5xl text-white mb-6">Timeline Complete!</h2>
                     <p class="text-white/80 mb-8 text-xl">You successfully placed 10 songs.</p>
-                    <button onclick="location.reload()" class="bg-white text-indigo font-display font-bold text-xl px-12 py-4 rounded-full shadow-xl transition transform hover:scale-105">
+                    <button onclick="location.reload()"
+                        class="bg-white text-indigo font-display font-bold text-xl px-12 py-4 rounded-full shadow-xl transition transform hover:scale-105">
                         Play Again
                     </button>
                 </div>
@@ -184,16 +231,16 @@
                     const response = await fetch('cards.json');
                     if (!response.ok) throw new Error("Could not load cards.json");
                     const data = await response.json();
-                    
+
                     // Shuffle Deck
                     this.deck = data.sort(() => Math.random() - 0.5);
-                    
+
                     DOM.startScreen.classList.add('hidden');
                     DOM.statusPanel.classList.remove('hidden');
-                    
+
                     // Init Sortables
                     this.initDragAndDrop();
-                    
+
                     // Place first card (Starter)
                     const starter = this.deck.pop();
                     this.addToTimeline(starter, true); // True = revealed
@@ -254,7 +301,7 @@
 
                 // Fetch Audio
                 const songData = await this.fetchSongData(this.currentCard);
-                
+
                 if (songData && songData.previewUrl) {
                     this.audio.src = songData.previewUrl;
                     this.audio.volume = 1.0;
@@ -277,14 +324,14 @@
                 // Start Timer
                 this.timeLeft = CONFIG.totalTurnTime;
                 this.isPlaying = true;
-                
+
                 clearInterval(this.timer);
                 this.timer = setInterval(() => this.gameLoop(), 100);
             },
 
             gameLoop() {
                 this.timeLeft -= 0.1;
-                
+
                 // Update UI
                 DOM.timerText.innerText = Math.max(0, this.timeLeft).toFixed(1) + 's';
                 const pct = (this.timeLeft / CONFIG.totalTurnTime) * 100;
@@ -333,7 +380,7 @@
                 const div = document.createElement('div');
                 div.className = "relative w-40 h-40 cursor-grab active:cursor-grabbing perspective-1000";
                 div.setAttribute('data-year', cardData.year);
-                div.id = `card-${cardData.year}-${Math.floor(Math.random()*1000)}`;
+                div.id = `card-${cardData.year}-${Math.floor(Math.random() * 1000)}`;
 
                 const inner = document.createElement('div');
                 inner.className = `w-full h-full relative transform-style-3d transition-transform duration-700 shadow-xl rounded-xl ${isRevealed ? '' : 'rotate-y-180'}`; // If not revealed, we actually show the "Back" which is the mystery face? 
@@ -341,7 +388,7 @@
                 // Front Face: The Revealed Info (Year/Artist)
                 // Back Face: The Mystery Logo
                 // If isRevealed is FALSE, we want to show Back Face. So we rotate 180.
-                
+
                 // 1. Front Face (Revealed)
                 const front = document.createElement('div');
                 front.className = "absolute inset-0 backface-hidden bg-white rounded-xl flex flex-col items-center justify-center p-3 text-center border-4 border-white";
@@ -366,10 +413,10 @@
             addToTimeline(card, revealed) {
                 const el = this.createCardElement(card, revealed);
                 DOM.timelineList.appendChild(el);
-                
+
                 // If we are just setting up board, we push to logic array
                 this.timeline.push(card);
-                this.timeline.sort((a,b) => a.year - b.year); // Keep logic state sorted
+                this.timeline.sort((a, b) => a.year - b.year); // Keep logic state sorted
             },
 
             resolveTurn(forceFail = false) {
@@ -391,7 +438,7 @@
                 }
 
                 const placedIndex = cardEls.indexOf(playedCardEl);
-                
+
                 // 2. Validate Position
                 // We need to check the years of the neighbors.
                 const leftEl = cardEls[placedIndex - 1];
@@ -412,13 +459,13 @@
                 // Flash Green
                 el.children[0].classList.remove('rotate-y-180'); // Flip to reveal
                 el.children[0].querySelector('.bg-white').classList.add('ring-4', 'ring-success');
-                
+
                 // Update Logic State
                 this.timeline.push(this.currentCard);
-                this.timeline.sort((a,b) => a.year - b.year);
-                
+                this.timeline.sort((a, b) => a.year - b.year);
+
                 this.updateScore();
-                
+
                 setTimeout(() => {
                     el.children[0].querySelector('.bg-white').classList.remove('ring-4', 'ring-success');
                     this.startTurn();
@@ -427,7 +474,7 @@
 
             handleFail(el) {
                 // Visual Fail
-                if(el) {
+                if (el) {
                     el.classList.add('animate-bounce'); // Shake/Bounce
                     el.children[0].classList.add('ring-4', 'ring-alert');
                     setTimeout(() => {
@@ -443,7 +490,7 @@
             updateScore() {
                 DOM.score.innerText = this.timeline.length;
             },
-            
+
             winGame() {
                 DOM.winScreen.classList.remove('hidden');
                 // Could trigger confetti here
@@ -451,7 +498,7 @@
         };
 
         // --- Event Listeners for "Hold to Lock" ---
-        
+
         let pressStartTime;
         let pressInterval;
 
@@ -461,7 +508,7 @@
 
             pressStartTime = Date.now();
             DOM.lockBtn.classList.add('scale-95');
-            
+
             pressInterval = setInterval(() => {
                 const elapsed = Date.now() - pressStartTime;
                 const pct = Math.min((elapsed / 1000) * 100, 100);
@@ -486,11 +533,12 @@
         DOM.lockBtn.addEventListener('mousedown', startPress);
         DOM.lockBtn.addEventListener('mouseup', cancelPress);
         DOM.lockBtn.addEventListener('mouseleave', cancelPress);
-        
+
         // Touch support
         DOM.lockBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(e); });
         DOM.lockBtn.addEventListener('touchend', cancelPress);
 
     </script>
 </body>
+
 </html>

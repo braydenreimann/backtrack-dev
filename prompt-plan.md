@@ -1,4 +1,4 @@
-# Backtrack MVP – Vibecoding Prompt Plan
+# Backtrack MVP – Vibecoding Prompt Plan (Apple iTunes Search API Edition)
 
 This document contains the **complete, ordered prompt sequence** and **acceptance criteria** for constructing the Backtrack MVP using ChatGPT in a controlled, iterative way.
 
@@ -12,40 +12,57 @@ This document contains the **complete, ordered prompt sequence** and **acceptanc
 
 ## Global Instruction Block (paste once at the start)
 
-### Prompt G0 — Non‑negotiables
-```
+### Prompt G0 — Non-negotiables
+```txt
 You are building an MVP for Backtrack.
 
 Hard constraints:
 - Stack: Next.js (TypeScript) single web app for host + phone + Node.js (TypeScript) Socket.IO realtime server.
 - Local dev only: host laptop + phones on same LAN.
 - In-memory room state only. No database. Static seed JSON deck.
-- No Backtrack user accounts or auth. Only Spotify OAuth for the host.
+- No Backtrack user accounts or auth.
 - No Stripe, no R2, no telemetry.
 - No late joins after game start.
 - Host is not a player. Turn order computed at game.start and fixed.
 - Active player places by dragging a “mystery card” row among existing timeline cards (drag end sends placement). Song metadata hidden until reveal.
-- Player must hold “Lock” for 1 second. On lock: server recomputes correctness, reveals immediately, updates score immediately, then automatically deals the next player’s card.
-- Win condition: first player to reach 10 timeline cards. Incorrect placement discards the card.
+- Player must hold “Lock” for 1 second. On lock: server recomputes correctness, **always reveals song metadata**, updates score immediately, then automatically deals the next player’s card.
+- Win condition: first player to reach 10 timeline cards.
 - Same-year ordering: any ordering within the same year is correct.
-- Reconnect rules:
-  - Host grace: 5 minutes; expiry closes the room.
-  - Active player disconnect pauses the game until reconnect within grace.
-  - Non-active disconnect may rejoin within grace; otherwise removed from turn order.
-- Kick rules:
-  - Host may kick in lobby or mid-game.
-  - If active player is kicked, discard their card and advance turn.
-  - Kicked players cannot rejoin.
-- Spotify integration:
-  - Host logs in via Spotify OAuth.
-  - Tokens stored in a lightweight local file store.
-  - Playback authority is the host’s Spotify account.
-  - Auto-pick currently active device.
-  - If no active device: show “Open Spotify on any device and press Retry.”
-- Playback behavior:
-  - As soon as a card is dealt, trigger Spotify playback for that track.
-  - Host-only play/pause controls.
-  - When next card is dealt, pause the previous track.
+
+Client device constraints (MVP):
+- The Host role is desktop/laptop only.
+- The Player role is phone-only (mobile browsers).
+- Desktop browsers must be prevented from joining as players.
+- If a non-mobile device attempts to access /play:
+  - Block the join
+  - Display a clear message: "Please join from a phone."
+
+Reveal rules:
+- Song metadata (title, artist, year) is **always revealed on LOCK**, regardless of correctness.
+- Incorrect placement reveals the song, then discards the card.
+
+Reconnect rules:
+- Host grace: 5 minutes; expiry closes the room.
+- Active player disconnect pauses the game until reconnect within grace.
+- Non-active disconnect may rejoin within grace; otherwise removed from turn order.
+
+Kick rules:
+- Host may kick in lobby or mid-game.
+- If active player is kicked, reveal then discard their card and advance turn.
+- Kicked players cannot rejoin.
+
+Audio + metadata source (Apple iTunes Search API):
+- Do NOT integrate Spotify in any way.
+- On DEAL: the host client requests an iTunes Search API lookup:
+  GET https://itunes.apple.com/search?term=<encoded "title artist">&entity=song&limit=1
+- Use previewUrl for playback (HTMLAudioElement in the host browser only).
+- Phones do NOT play audio.
+- Phones do NOT receive title/artist/year for the current card until REVEAL.
+- Host-only play/pause controls (optional for MVP; at minimum auto-play on deal).
+- On next DEAL: stop/pause previous playback before starting the new preview.
+- If previewUrl is missing or playback fails:
+  - Do NOT block game progression.
+  - Display a clear host UI warning and proceed.
 
 Process rules:
 - Do NOT write code until explicitly instructed.
@@ -58,36 +75,38 @@ Process rules:
 
 Acceptance:
 - Assistant acknowledges constraints.
-- Assistant commits to using Spotify **track URIs** (`spotify:track:...`) via the Web API.
+- Assistant commits to iTunes Search API lookup + host-browser playback.
+- Assistant commits that metadata is always revealed on lock.
 
 ---
 
 ## Phase 0 — Architecture & Contracts (NO CODE)
 
 ### Prompt 0.1 — Architecture proposal
-```
+```txt
 Before writing any code:
 
-1. Propose a minimal text-based architecture diagram (host / phone / server / Spotify).
+1. Propose a minimal text-based architecture diagram (host / phone / server / iTunes Search API).
 2. Define the room state model: phases, players, timelines, turn order, placement, reconnect timers.
 3. Define the full event catalog (client → server and server → client), including who may emit each event.
 4. Define the phase/state machine, including DEAL → PLACE → LOCK/REVEAL → NEXT.
+5. Explicitly describe REVEAL semantics for both correct and incorrect placements.
 
 Do NOT generate code.
 ```
 
 Acceptance:
-- Clear authority boundaries (server authoritative for correctness and phase).
-- Explicit note that phones never receive song metadata before reveal.
+- Clear authority boundaries.
+- Explicit note that phones never receive song metadata before REVEAL.
+- Explicit note that metadata is revealed even on incorrect placement.
 - Fixed turn order defined at game.start.
-- Reconnect and kick semantics explicitly listed.
 
 ---
 
 ## Phase 1 — Realtime Server Skeleton
 
 ### Prompt 1.1 — Server scaffold
-```
+```txt
 Implement the Socket.IO server (TypeScript) with:
 
 - room.create (host) → returns roomCode + hostSessionToken
@@ -102,6 +121,7 @@ Implement the Socket.IO server (TypeScript) with:
 - Socket.IO acks: { ok: true } or { ok: false, code, message }
 
 Do NOT implement gameplay yet.
+Do NOT implement iTunes lookup yet.
 ```
 
 Acceptance:
@@ -115,7 +135,7 @@ Acceptance:
 ## Phase 2 — Minimal Host & Phone UI (Connectivity Only)
 
 ### Prompt 2.1 — Basic UI wiring
-```
+```txt
 Implement minimal Next.js pages:
 
 - /host: create room → redirect to /host/[roomCode]
@@ -125,48 +145,50 @@ Implement minimal Next.js pages:
 
 Wire Socket.IO join/resume flows.
 No gameplay yet.
+No audio yet.
 ```
 
 Acceptance:
 - Player list updates live on host.
 - Kick immediately removes player on all screens.
 - Refresh preserves identity.
+- Desktop browsers cannot join via /play.
+- Non-mobile devices attemping to join as players see a clear rejection message.
+- Mobile browsers can join successfully as players.
 
 ---
 
-## Phase 3 — Gameplay State Machine (No Spotify)
+## Phase 3 — Gameplay State Machine
 
 ### Prompt 3.1 — Core gameplay
-```
+```txt
 Implement gameplay logic in the server:
 
 - game.start (host-only, lobby-only)
 - Compute fixed turn order (host excluded)
 - Shared deck (static seed JSON, no repeats)
-- DEAL: select next card, enter PLACE
-- PLACE: active player submits placement on drag end
-- LOCK: active player locks → server recomputes correctness
-- Immediate reveal + score update
-- Correct: add card to timeline; Incorrect: discard card
-- Auto-advance to next turn and DEAL
+- DEAL → PLACE → LOCK → REVEAL → NEXT
+- On LOCK:
+  - Server validates correctness
+  - Server **always emits a REVEAL event with full metadata**
+  - Apply success or failure outcome
+- Correct: add card to timeline
+- Incorrect: discard card after reveal
+- Auto-advance to next turn
 - Win at 10 timeline cards → end game
-
-Implement disconnect, reconnect, and kick rules exactly as specified.
 ```
 
 Acceptance:
-- Only active player may place/lock.
-- Late joins rejected.
-- Same-year placements treated as correct.
-- Active disconnect pauses game; reconnect resumes.
-- Host disconnect grace closes room.
+- Metadata is revealed on both success and failure.
+- Incorrect cards are visible briefly before discard.
+- Phones never receive metadata pre-reveal.
 
 ---
 
 ## Phase 4 — Placement UX & Timeline Visualization
 
 ### Prompt 4.1 — Placement UI
-```
+```txt
 Implement phone placement UI:
 
 - Show existing timeline rows (revealed cards show Year · Title · Artist)
@@ -191,40 +213,41 @@ Acceptance:
 
 ---
 
-## Phase 5 — Spotify OAuth & Playback
+## Phase 5 — iTunes Search API Lookup + Host Playback
 
-### Prompt 5.1 — Spotify OAuth
-```
-Implement Spotify OAuth (Authorization Code flow) for the host:
+### Prompt 5.1 — iTunes lookup + playback integration
+```txt
+Integrate iTunes Search API playback with gameplay (host-only):
 
-- Request broad playback scopes
-- Store access + refresh tokens in a lightweight local file store
-- Reuse tokens across sessions
-- Detect active device automatically
-- If no device: show “Open Spotify on any device and press Retry”
+- When the server enters DEAL and emits the “dealt” event:
+  - The host client performs an iTunes Search API lookup using:
+    query = `${title} ${artist}`
+    GET https://itunes.apple.com/search?term=<encoded>&entity=song&limit=1
+  - If a result exists and has previewUrl:
+    - Set host Audio().src = previewUrl
+    - Attempt autoplay
+    - If autoplay blocked, show a “Tap to Play Preview” button on host
+  - If no previewUrl or lookup fails:
+    - Show “Preview unavailable — continue without audio”
+    - Do NOT block the turn
+
+Playback behavior:
+- Host-only playback (phones never play audio).
+- On each new DEAL:
+  - Pause/stop the previous preview before starting the next.
+- Optional (nice-to-have):
+  - Host play/pause button that only affects host playback.
+
+Implementation constraint:
+- Do NOT call iTunes Search API from the server. Host client only.
+- Do NOT persist previewUrl beyond the current deal (ephemeral is fine).
 ```
 
 Acceptance:
-- Host authenticates once and reuses session.
-- No device state is handled gracefully.
-
----
-
-### Prompt 5.2 — Playback integration
-```
-Integrate Spotify playback with gameplay:
-
-- On DEAL: trigger Spotify Start/Resume Playback with track URI
-- Use uris: ["spotify:track:..."]
-- Host-only play/pause controls
-- On next DEAL: pause previous playback
-- If playback fails: pause game progression and show error state
-```
-
-Acceptance:
-- Playback starts immediately on deal.
-- Metadata remains hidden until reveal.
-- Playback errors block progression.
+- Playback starts (or offers tap-to-play) immediately on deal when previewUrl exists.
+- Metadata remains hidden until reveal (phones and non-host views).
+- Missing previewUrl does not block gameplay.
+- On next deal, previous audio stops.
 
 ---
 
@@ -232,10 +255,10 @@ Acceptance:
 
 Run end-to-end:
 
-1. Host creates room and connects Spotify.
+1. Host creates room.
 2. Players join; host kicks one.
 3. Host starts game; no late joins allowed.
-4. Deal → music plays → active player places blindly.
+4. Deal → host attempts iTunes preview playback → active player places blindly.
 5. Drag updates host view.
 6. Lock → reveal → score update → next deal.
 7. Disconnect/reconnect scenarios behave correctly.
