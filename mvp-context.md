@@ -100,6 +100,7 @@ It supersedes any earlier Spotify-based MVP context.
 - Incorrect placement → **song is revealed, then card is discarded**.
 - Same-year placements are always considered correct.
 - First player to reach **10 timeline cards** wins immediately.
+- There can be between 2-10 players
 
 ### Visibility contract
 - Phones never receive current-card metadata **before REVEAL**.
