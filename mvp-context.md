@@ -72,8 +72,10 @@ It supersedes any earlier Spotify-based MVP context.
 - Host is **not a player**.
 - Turn order is computed once at `game.start` and is fixed.
 - No late joins after game start.
+- At game start, each player receives one seed card automatically placed in their timeline (no playback).
 
 ### Turn flow
+0. SEED — server auto-deals one starting card to each player and reveals it (no playback)
 1. DEAL — server selects next card and starts the turn timer
 2. PLACE — active player may drag a mystery card into the timeline
 3. LOCK — player may manually lock by holding for 1 second
@@ -178,11 +180,11 @@ Backtrack is a **TV-first** party game. The shared host screen is the primary ga
   - Otherwise removed from turn order.
 
 ### Kick
-- Host may kick players in lobby or mid-game.
+- Host may kick players in lobby.
+- Kicked players may rejoin the same room with a new name.
 - If the active player is kicked:
   - Their card is revealed, then discarded.
   - Turn advances immediately.
-- Kicked players cannot rejoin.
 
 ---
 

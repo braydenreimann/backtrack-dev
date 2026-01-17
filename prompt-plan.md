@@ -24,6 +24,7 @@ Hard constraints:
 - No Stripe, no R2, no telemetry.
 - No late joins after game start.
 - Host is not a player. Turn order computed at game.start and fixed.
+- At game start, each player receives one seed card automatically placed in their timeline (no playback).
 - Active player places by dragging a “mystery card” row among existing timeline cards (drag end sends placement). Song metadata hidden until reveal.
 - Player must hold “Lock” for 1 second. On lock: server recomputes correctness, **always reveals song metadata**, updates score immediately, then automatically deals the next player’s card.
 - Win condition: first player to reach 10 timeline cards.
@@ -70,7 +71,7 @@ Reconnect rules:
 Kick rules:
 - Host may kick in lobby or mid-game.
 - If active player is kicked, reveal then discard their card and advance turn.
-- Kicked players cannot rejoin.
+- Kicked players may rejoin with a new name.
 
 Audio + metadata source (Apple iTunes Search API):
 - Do NOT integrate Spotify in any way.
@@ -148,7 +149,7 @@ Do NOT implement iTunes lookup yet.
 Acceptance:
 - Host refresh resumes host role.
 - Player refresh resumes silently.
-- Kicked players cannot rejoin.
+- Kicked players may rejoin with a new name.
 - Room state snapshots include seq.
 
 ---
@@ -222,19 +223,17 @@ Host screen UX:
 
 Phone UX (controller-only):
 - Non-active players see a waiting screen only (no timelines, no details).
-- Active player sees only the placement UI (vertical list) and hold-to-lock button.
+- Active player sees only the placement UI (vertical list of songs in their timeline) and hold-to-lock button.
 - Active player never sees title/artist/year for the current card before REVEAL.
 
 Realtime placement updates:
-- Sending placement to the server on drag-end is still required for authoritative state.
-- Broadcasting every drag-end placement to all clients is NOT required.
-- Optionally, the server may broadcast the tentative placement to the host only for live mirroring.
+- Send tentative placement of the card to the server on drag-end for live mirroring
 
 Acceptance:
 - Non-active phones show only a waiting screen.
 - Host screen always shows player list + card counts.
 - On turn start, host screen smoothly transitions to a large active-player timeline view.
-- Active phone shows only placement controls and no metadata.
+- Active phone shows only placement controls and no metadata for the mystery song
 
 ---
 
