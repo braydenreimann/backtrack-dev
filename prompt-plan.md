@@ -37,9 +37,30 @@ Client device constraints (MVP):
   - Block the join
   - Display a clear message: "Please join from a phone."
 
+TV-first UX (MVP):
+- The host screen (TV/laptop) is the primary gameplay surface.
+- Phones are controllers only:
+  - Non-active players see only a minimal waiting screen (no timelines, no card details).
+  - Active player sees only the placement UI needed to position the mystery card (no metadata).
+- The host screen always shows the scoreboard: player names + current card counts.
+- When a player’s turn begins, the host screen transitions to a large, focused view of that player’s timeline.
+- Smooth transitions are required (simple animations are fine).
+
+Live placement visibility:
+- During PLACE, when the active player drags and releases the mystery card, the server must broadcast the tentative placement.
+- The host device must immediately render the active player's tentative placement timeline ordering before LOCK or TIMEOUT.
+
 Reveal rules:
 - Song metadata (title, artist, year) is **always revealed on LOCK**, regardless of correctness.
 - Incorrect placement reveals the song, then discards the card.
+
+Turn timer (MVP):
+- Each turn has a fixed countdown timer (40 seconds).
+- The timer starts at DEAL.
+- On timer expiry:
+  - If the mystery card has not been placed in the timeline, discard the card.
+  - If the mystery card has been placed, automatically LOCK and resolve the turn.
+  - Timer-triggered resolution uses the same REVEAL logic as manual lock.
 
 Reconnect rules:
 - Host grace: 5 minutes; expiry closes the room.
@@ -176,12 +197,16 @@ Implement gameplay logic in the server:
 - Incorrect: discard card after reveal
 - Auto-advance to next turn
 - Win at 10 timeline cards → end game
+- Server maintains a per-turn timer:
+  - On expiry, apply the timeout rules (auto-lock if placed, discard if not).
 ```
 
 Acceptance:
 - Metadata is revealed on both success and failure.
 - Incorrect cards are visible briefly before discard.
 - Phones never receive metadata pre-reveal.
+- Timeout with no placement discards the card.
+- Timeout with placement auto-locks and reveals metadata.
 
 ---
 
@@ -189,27 +214,27 @@ Acceptance:
 
 ### Prompt 4.1 — Placement UI
 ```txt
-Implement phone placement UI:
+Host screen UX:
+- Always show a scoreboard with player names + card counts + active player indicator.
+- When a player becomes active, transition to a large, centered view of that player’s timeline.
+- Timeline must be easy to read from across a room (large typography and spacing).
+- On REVEAL, show correctness feedback and the revealed song metadata on the host screen.
 
-- Show existing timeline rows (revealed cards show Year · Title · Artist)
-- Add one “mystery card” row (no metadata)
-- Drag-and-drop reordering
-- On drag end, send placement to server
-- 1-second hold-to-lock button with progress fill
-- Non-active players see waiting state
+Phone UX (controller-only):
+- Non-active players see a waiting screen only (no timelines, no details).
+- Active player sees only the placement UI (vertical list) and hold-to-lock button.
+- Active player never sees title/artist/year for the current card before REVEAL.
 
-Implement host timeline visualization:
-
-- Always render timeline in ascending chronological order
-- During PLACE, reflect tentative placement after drag end
-- On reveal, show correctness feedback and updated scores
-```
+Realtime placement updates:
+- Sending placement to the server on drag-end is still required for authoritative state.
+- Broadcasting every drag-end placement to all clients is NOT required.
+- Optionally, the server may broadcast the tentative placement to the host only for live mirroring.
 
 Acceptance:
-- Phones never see metadata pre-reveal.
-- Tentative placement appears live on host.
-- Lock requires uninterrupted 1-second hold.
-- Reveal updates scores immediately.
+- Non-active phones show only a waiting screen.
+- Host screen always shows player list + card counts.
+- On turn start, host screen smoothly transitions to a large active-player timeline view.
+- Active phone shows only placement controls and no metadata.
 
 ---
 
