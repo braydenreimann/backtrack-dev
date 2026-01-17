@@ -38,6 +38,7 @@ type RoomState = {
   nextPlayerNumber: number;
   turnOrder: string[];
   activePlayerIndex: number;
+  turnNumber: number;
   deck: Card[];
   currentCard: Card | null;
   tentativePlacementIndex: number | null;
@@ -221,6 +222,7 @@ const serializeRoom = (room: RoomState) => ({
   seq: room.seq,
   phase: room.phase,
   activePlayerId: room.turnOrder[room.activePlayerIndex] ?? null,
+  turnNumber: room.turnNumber,
   turnExpiresAt: room.turnExpiresAt,
   host: {
     connected: room.host.connected,
@@ -297,12 +299,14 @@ const scheduleNextTurn = (room: RoomState, delayMs: number) => {
 const emitTurnDealt = (room: RoomState, activePlayer: PlayerState, card: Card, expiresAt: number) => {
   io.to(room.code).emit('turn.dealt', {
     activePlayerId: activePlayer.id,
+    turnNumber: room.turnNumber,
     expiresAt,
   });
 
   if (room.host.socketId) {
     io.to(room.host.socketId).emit('turn.dealt.host', {
       activePlayerId: activePlayer.id,
+      turnNumber: room.turnNumber,
       card,
       timelines: buildTimelines(room),
     });
@@ -311,6 +315,7 @@ const emitTurnDealt = (room: RoomState, activePlayer: PlayerState, card: Card, e
   if (activePlayer.socketId) {
     io.to(activePlayer.socketId).emit('turn.dealt.player', {
       activePlayerId: activePlayer.id,
+      turnNumber: room.turnNumber,
       timeline: activePlayer.timeline,
     });
   }
@@ -376,6 +381,7 @@ const startTurn = (room: RoomState) => {
   room.currentCard = room.deck.shift() ?? null;
   room.tentativePlacementIndex = null;
   room.phase = 'DEAL';
+  room.turnNumber += 1;
   const expiresAt = Date.now() + TURN_DURATION_MS;
   room.turnExpiresAt = expiresAt;
 
@@ -440,6 +446,7 @@ io.on('connection', (socket) => {
       nextPlayerNumber: 1,
       turnOrder: [],
       activePlayerIndex: 0,
+      turnNumber: 0,
       deck: [],
       currentCard: null,
       tentativePlacementIndex: null,
@@ -610,6 +617,7 @@ io.on('connection', (socket) => {
     });
     room.turnOrder = room.players.map((player) => player.id);
     room.activePlayerIndex = 0;
+    room.turnNumber = 0;
     room.deck = shuffleCards(baseDeck);
     room.currentCard = null;
     room.tentativePlacementIndex = null;
@@ -622,6 +630,7 @@ io.on('connection', (socket) => {
     io.to(room.code).emit('game.started', {
       turnOrder: room.turnOrder,
       activePlayerId: room.turnOrder[0] ?? null,
+      turnNumber: room.turnNumber,
       timelines: buildTimelines(room),
     });
 

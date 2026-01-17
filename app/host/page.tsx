@@ -31,7 +31,7 @@ export default function HostLandingPage() {
         const hostSessionToken = response.hostSessionToken as string;
         setHostSession(hostSessionToken, roomCode);
         socket.disconnect();
-        router.push(`/host/${roomCode}`);
+        router.push(`/host/${roomCode}/lobby`);
       } else {
         setError(response.message ?? 'Unable to create room.');
         socket.disconnect();
@@ -45,7 +45,7 @@ export default function HostLandingPage() {
     if (!roomCode) {
       return;
     }
-    router.push(`/host/${roomCode}`);
+    router.push(`/host/${roomCode}/lobby`);
   };
 
   return (

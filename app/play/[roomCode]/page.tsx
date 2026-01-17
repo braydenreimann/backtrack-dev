@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
@@ -94,8 +94,8 @@ export default function PlayRoomPage() {
   const [lockHolding, setLockHolding] = useState(false);
   const kickMessage = 'You were removed by the host.';
 
-  const redirectToPlay = () => router.replace('/play');
-  const showKickAndRedirect = () => {
+  const redirectToPlay = useCallback(() => router.replace('/play'), [router]);
+  const showKickAndRedirect = useCallback(() => {
     kickedRef.current = true;
     setKicked(true);
     clearPlayerSession();
@@ -106,7 +106,7 @@ export default function PlayRoomPage() {
     kickTimeoutRef.current = window.setTimeout(() => {
       redirectToPlay();
     }, 1500);
-  };
+  }, [redirectToPlay]);
 
   useEffect(() => {
     setIsPhone(isPhoneDevice(navigator.userAgent));
@@ -123,6 +123,12 @@ export default function PlayRoomPage() {
       playerIdRef.current = storedId;
     }
   }, []);
+
+  useEffect(() => {
+    if (playerId) {
+      playerIdRef.current = playerId;
+    }
+  }, [playerId]);
 
   useEffect(() => {
     if (!turnExpiresAt) {
@@ -209,7 +215,7 @@ export default function PlayRoomPage() {
     });
 
     socket.on('turn.reveal', (payload: TurnReveal) => {
-      if (payload.playerId === playerId) {
+      if (payload.playerId === playerIdRef.current) {
         setReveal(payload);
         setTimeline(payload.timeline);
         setPlacementIndex(null);
@@ -264,7 +270,7 @@ export default function PlayRoomPage() {
       }
       socket.disconnect();
     };
-  }, [isPhone, roomCode, router]);
+  }, [isPhone, roomCode, redirectToPlay, showKickAndRedirect]);
 
   const isActive = Boolean(
     playerId &&
