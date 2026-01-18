@@ -490,6 +490,7 @@ main {
   perspective: 1000px;
   --card-font: clamp(12px, calc(var(--timeline-card-size) * 0.09), 22px);
   --card-pad: clamp(10px, calc(var(--timeline-card-size) * 0.08), 20px);
+  will-change: transform;
 }
 
 .timeline-card-inner {
@@ -567,8 +568,12 @@ main {
   margin-top: 0.6em;
 }
 
-.timeline-card.current .timeline-card-inner {
-  animation: card-pop 500ms ease;
+.timeline-card.current.face-down .timeline-card-inner {
+  animation: card-pop-down 500ms ease;
+}
+
+.timeline-card.current:not(.face-down) .timeline-card-inner {
+  animation: card-pop-up 500ms ease;
 }
 
 .timeline-card.reveal-good .timeline-card-face.front {
@@ -583,15 +588,27 @@ main {
   box-shadow: 0 0 0 4px rgba(255, 92, 92, 0.7), 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
-@keyframes card-pop {
+@keyframes card-pop-up {
   0% {
-    transform: scale(0.96);
+    transform: rotateY(0deg) scale(0.96);
   }
   60% {
-    transform: scale(1.02);
+    transform: rotateY(0deg) scale(1.02);
   }
   100% {
-    transform: scale(1);
+    transform: rotateY(0deg) scale(1);
+  }
+}
+
+@keyframes card-pop-down {
+  0% {
+    transform: rotateY(180deg) scale(0.96);
+  }
+  60% {
+    transform: rotateY(180deg) scale(1.02);
+  }
+  100% {
+    transform: rotateY(180deg) scale(1);
   }
 }
 

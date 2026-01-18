@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
@@ -13,7 +13,7 @@ type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
 
-export default function PlayLandingPage() {
+function PlayLandingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isMock, mockQuery } = getMockConfig(searchParams);
@@ -122,5 +122,13 @@ export default function PlayLandingPage() {
       </section>
       {error ? <div className="status bad">{error}</div> : null}
     </div>
+  );
+}
+
+export default function PlayLandingPage() {
+  return (
+    <Suspense fallback={<div className="container"><div className="status">Loading...</div></div>}>
+      <PlayLandingPageContent />
+    </Suspense>
   );
 }

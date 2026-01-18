@@ -88,7 +88,7 @@ type PlacePayload = {
 
 const ROOM_CODE_LENGTH = 6;
 const TURN_DURATION_MS = 40_000;
-const REVEAL_DURATION_MS = 1500;
+const REVEAL_DURATION_MS = 3000;
 const WIN_CARD_COUNT = 10;
 
 const __filename = fileURLToPath(import.meta.url);

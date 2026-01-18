@@ -39,6 +39,7 @@ type TurnReveal = {
   correct: boolean;
   placementIndex: number;
   timeline: Card[];
+  reason: string;
 };
 
 type PreviewState = 'idle' | 'loading' | 'ready' | 'blocked' | 'unavailable';
@@ -235,6 +236,7 @@ export const getMockHostGameState = (state: string | null): MockHostGameState =>
         correct: true,
         placementIndex: 1,
         timeline: revealTimeline,
+        reason: 'mock',
       },
       previewState: 'ready',
       previewUrl: 'mock',
@@ -305,6 +307,7 @@ export const getMockPlayRoomState = (state: string | null): MockPlayRoomState =>
         correct: false,
         placementIndex: 1,
         timeline: revealTimeline,
+        reason: 'mock',
       },
       placementIndex: null,
       status: 'Reveal in progress.',

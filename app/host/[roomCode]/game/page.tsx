@@ -8,7 +8,7 @@ import { getMockHostGameState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
 import HostHeader from './HostHeader';
 import HostTurnBanner from './HostTurnBanner';
-import TimelineStrip from './TimelineStrip';
+import TimelineStripAnimated from './TimelineStripAnimated';
 import TurnTimer from './TurnTimer';
 import AudioPreviewControls from './AudioPreviewControls';
 import HostStatusBanners from './HostStatusBanners';
@@ -40,6 +40,7 @@ type AckErr = { ok: false; code: string; message: string };
 type AckResponse = AckOk | AckErr;
 
 const TURN_DURATION_SECONDS = 40;
+const REVEAL_DURATION_MS = 3000;
 
 export default function HostGamePage() {
   const params = useParams();
@@ -52,6 +53,7 @@ export default function HostGamePage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lookupIdRef = useRef(0);
   const revealTimerRef = useRef<number | null>(null);
+  const pendingRevealRef = useRef<TurnReveal | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState<string>('Connecting to game...');
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,16 @@ export default function HostGamePage() {
   );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+
+  const clearRevealState = useCallback(() => {
+    if (revealTimerRef.current !== null) {
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+    setRevealDisplay(null);
+    setReveal(null);
+    pendingRevealRef.current = null;
+  }, []);
 
   const stopPreview = useCallback((resetState = true) => {
     const audio = audioRef.current;
@@ -202,7 +214,7 @@ export default function HostGamePage() {
       setActivePlayerId(payload.activePlayerId);
       setTurnExpiresAt(payload.expiresAt);
       setTentativePlacementIndex(null);
-      setReveal(null);
+      clearRevealState();
     });
 
     socket.on('game.started', (payload: GameStarted) => {
@@ -220,11 +232,11 @@ export default function HostGamePage() {
       payload.timelines.forEach((entry) => {
         timelineMap[entry.playerId] = entry.timeline;
       });
+      clearRevealState();
       setTimelines(timelineMap);
       setCurrentCard(payload.card);
       setActivePlayerId(payload.activePlayerId);
       setTentativePlacementIndex(null);
-      setReveal(null);
       setStatus('');
       void startPreview(payload.card);
     });
@@ -235,17 +247,16 @@ export default function HostGamePage() {
 
     socket.on('turn.reveal', (payload: TurnReveal) => {
       setReveal(payload);
-      setTimelines((prev) => ({
-        ...prev,
-        [payload.playerId]: payload.timeline,
-      }));
+      setRevealDisplay(payload);
       setTentativePlacementIndex(null);
       setCurrentCard(payload.card);
+      pendingRevealRef.current = payload;
     });
 
     socket.on('turn.timeout', () => {
       setTentativePlacementIndex(null);
       setCurrentCard(null);
+      clearRevealState();
     });
 
     socket.on('game.ended', (payload: { winnerId?: string; reason: string }) => {
@@ -282,7 +293,7 @@ export default function HostGamePage() {
       stopPreview(false);
       socket.disconnect();
     };
-  }, [isMock, mockState, roomCode, router, startPreview, stopPreview]);
+  }, [clearRevealState, isMock, mockState, roomCode, router, startPreview, stopPreview]);
 
   useEffect(() => {
     if (isMock) {
@@ -325,22 +336,32 @@ export default function HostGamePage() {
       window.clearTimeout(revealTimerRef.current);
       revealTimerRef.current = null;
     }
-    if (!reveal || reveal.playerId !== activePlayerId) {
-      setRevealDisplay(null);
+    if (!revealDisplay || revealDisplay.playerId !== activePlayerId) {
+      if (revealDisplay && revealDisplay.playerId !== activePlayerId) {
+        setRevealDisplay(null);
+      }
       return;
     }
-    setRevealDisplay(reveal);
     revealTimerRef.current = window.setTimeout(() => {
       setRevealDisplay(null);
+      setReveal(null);
+      const pendingReveal = pendingRevealRef.current;
+      if (pendingReveal) {
+        setTimelines((prev) => ({
+          ...prev,
+          [pendingReveal.playerId]: pendingReveal.timeline,
+        }));
+        pendingRevealRef.current = null;
+      }
       revealTimerRef.current = null;
-    }, 1600);
+    }, REVEAL_DURATION_MS);
     return () => {
       if (revealTimerRef.current !== null) {
         window.clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
       }
     };
-  }, [activePlayerId, isMock, reveal]);
+  }, [activePlayerId, isMock, reveal, revealDisplay]);
 
   const activePlayer = useMemo(
     () => room?.players.find((player) => player.id === activePlayerId) ?? null,
@@ -363,14 +384,27 @@ export default function HostGamePage() {
     const faceDown = !revealForActive;
 
     const baseTimeline = [...activeTimeline];
-    if (revealForActive?.correct && placementIndex !== null && placementIndex < baseTimeline.length) {
+    const currentKey = current ? `${current.title}-${current.artist}-${current.year}` : 'current-card';
+    const revealKey = revealForActive
+      ? `${revealForActive.card.title}-${revealForActive.card.artist}-${revealForActive.card.year}`
+      : null;
+    if (
+      revealForActive?.correct &&
+      placementIndex !== null &&
+      placementIndex < baseTimeline.length &&
+      revealKey &&
+      baseTimeline.some(
+        (card) =>
+          `${card.title}-${card.artist}-${card.year}` === revealKey
+      )
+    ) {
       baseTimeline.splice(placementIndex, 1);
     }
 
     baseTimeline.forEach((card, index) => {
       if (showCurrent && placementIndex === index && current) {
         items.push({
-          key: 'current-card',
+          key: currentKey,
           card: current,
           faceDown,
           highlight,
@@ -378,7 +412,7 @@ export default function HostGamePage() {
         });
       }
       items.push({
-        key: `${card.title}-${card.artist}-${card.year}-${index}`,
+        key: `${card.title}-${card.artist}-${card.year}`,
         card,
         faceDown: false,
         isCurrent: false,
@@ -387,7 +421,7 @@ export default function HostGamePage() {
 
     if (showCurrent && placementIndex !== null && placementIndex >= baseTimeline.length && current) {
       items.push({
-        key: 'current-card',
+        key: currentKey,
         card: current,
         faceDown,
         highlight,
@@ -413,7 +447,7 @@ export default function HostGamePage() {
 
       <HostTurnBanner roundNumber={roundNumber} activePlayerName={activePlayer?.name ?? null} />
 
-      <TimelineStrip items={timelineItems} revealDisplay={revealDisplay} />
+      <TimelineStripAnimated items={timelineItems} revealDisplay={revealDisplay} />
 
       <section className="host-timer">
         <TurnTimer remainingSeconds={remainingSeconds} progressPct={progressPct} />

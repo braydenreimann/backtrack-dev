@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { getHostRoomCode, getHostSessionToken, setHostSession } from '@/lib/storage';
@@ -12,7 +12,7 @@ type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
 
-export default function HostLandingPage() {
+function HostLandingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isMock, mockQuery } = getMockConfig(searchParams);
@@ -77,5 +77,13 @@ export default function HostLandingPage() {
       </section>
       {error ? <div className="status bad">{error}</div> : null}
     </div>
+  );
+}
+
+export default function HostLandingPage() {
+  return (
+    <Suspense fallback={<div className="container"><div className="status">Loading...</div></div>}>
+      <HostLandingPageContent />
+    </Suspense>
   );
 }

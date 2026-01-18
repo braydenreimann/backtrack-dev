@@ -1,14 +1,18 @@
+import { forwardRef } from 'react';
+import type { CSSProperties } from 'react';
 import type { TimelineItem, TurnReveal } from './types';
 import TimelineCard from './TimelineCard';
 
 export type TimelineStripProps = {
   items: TimelineItem[];
   revealDisplay: TurnReveal | null;
+  style?: CSSProperties;
 };
 
-export default function TimelineStrip({ items, revealDisplay }: TimelineStripProps) {
-  return (
-    <section className="timeline-stage">
+const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
+  ({ items, revealDisplay, style }, ref) => {
+    return (
+      <section className="timeline-stage" ref={ref} style={style}>
       <div className="timeline-axis" />
       <div className="timeline-label left">Oldest</div>
       <div className="timeline-label right">Newest</div>
@@ -28,6 +32,11 @@ export default function TimelineStrip({ items, revealDisplay }: TimelineStripPro
           </span>
         </div>
       ) : null}
-    </section>
-  );
-}
+      </section>
+    );
+  }
+);
+
+TimelineStrip.displayName = 'TimelineStrip';
+
+export default TimelineStrip;
