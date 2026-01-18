@@ -41,6 +41,9 @@ type AckResponse = AckOk | AckErr;
 
 const TURN_DURATION_SECONDS = 40;
 const REVEAL_DURATION_MS = 3000;
+const REVEAL_FLIP_DURATION_MS = 700;
+const REVEAL_EXIT_DURATION_MS = 500;
+const REVEAL_EXIT_DELAY_MS = Math.max(0, REVEAL_DURATION_MS - REVEAL_EXIT_DURATION_MS);
 
 export default function HostGamePage() {
   const params = useParams();
@@ -53,6 +56,8 @@ export default function HostGamePage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lookupIdRef = useRef(0);
   const revealTimerRef = useRef<number | null>(null);
+  const revealContentTimerRef = useRef<number | null>(null);
+  const revealExitTimerRef = useRef<number | null>(null);
   const pendingRevealRef = useRef<TurnReveal | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState<string>('Connecting to game...');
@@ -65,6 +70,8 @@ export default function HostGamePage() {
   const [tentativePlacementIndex, setTentativePlacementIndex] = useState<number | null>(null);
   const [reveal, setReveal] = useState<TurnReveal | null>(null);
   const [revealDisplay, setRevealDisplay] = useState<TurnReveal | null>(null);
+  const [revealContentVisible, setRevealContentVisible] = useState(false);
+  const [revealExitActive, setRevealExitActive] = useState(false);
   const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ready' | 'blocked' | 'unavailable'>(
     'idle'
   );
@@ -76,8 +83,18 @@ export default function HostGamePage() {
       window.clearTimeout(revealTimerRef.current);
       revealTimerRef.current = null;
     }
+    if (revealContentTimerRef.current !== null) {
+      window.clearTimeout(revealContentTimerRef.current);
+      revealContentTimerRef.current = null;
+    }
+    if (revealExitTimerRef.current !== null) {
+      window.clearTimeout(revealExitTimerRef.current);
+      revealExitTimerRef.current = null;
+    }
     setRevealDisplay(null);
     setReveal(null);
+    setRevealContentVisible(false);
+    setRevealExitActive(false);
     pendingRevealRef.current = null;
   }, []);
 
@@ -178,6 +195,9 @@ export default function HostGamePage() {
       setCurrentCard(mock.currentCard);
       setTentativePlacementIndex(mock.tentativePlacementIndex);
       setReveal(mock.reveal);
+      setRevealDisplay(mock.reveal);
+      setRevealContentVisible(Boolean(mock.reveal));
+      setRevealExitActive(false);
       setStatus(mock.status);
       setError(mock.error);
       setPreviewState(mock.previewState);
@@ -246,8 +266,22 @@ export default function HostGamePage() {
     });
 
     socket.on('turn.reveal', (payload: TurnReveal) => {
+      if (revealTimerRef.current !== null) {
+        window.clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+      if (revealContentTimerRef.current !== null) {
+        window.clearTimeout(revealContentTimerRef.current);
+        revealContentTimerRef.current = null;
+      }
+      if (revealExitTimerRef.current !== null) {
+        window.clearTimeout(revealExitTimerRef.current);
+        revealExitTimerRef.current = null;
+      }
       setReveal(payload);
       setRevealDisplay(payload);
+      setRevealContentVisible(false);
+      setRevealExitActive(false);
       setTentativePlacementIndex(null);
       setCurrentCard(payload.card);
       pendingRevealRef.current = payload;
@@ -329,22 +363,56 @@ export default function HostGamePage() {
         window.clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
       }
+      if (revealContentTimerRef.current !== null) {
+        window.clearTimeout(revealContentTimerRef.current);
+        revealContentTimerRef.current = null;
+      }
+      if (revealExitTimerRef.current !== null) {
+        window.clearTimeout(revealExitTimerRef.current);
+        revealExitTimerRef.current = null;
+      }
       setRevealDisplay(reveal);
+      setRevealContentVisible(Boolean(reveal));
+      setRevealExitActive(false);
       return;
     }
     if (revealTimerRef.current !== null) {
       window.clearTimeout(revealTimerRef.current);
       revealTimerRef.current = null;
     }
+    if (revealContentTimerRef.current !== null) {
+      window.clearTimeout(revealContentTimerRef.current);
+      revealContentTimerRef.current = null;
+    }
+    if (revealExitTimerRef.current !== null) {
+      window.clearTimeout(revealExitTimerRef.current);
+      revealExitTimerRef.current = null;
+    }
     if (!revealDisplay || revealDisplay.playerId !== activePlayerId) {
+      setRevealContentVisible(false);
+      setRevealExitActive(false);
       if (revealDisplay && revealDisplay.playerId !== activePlayerId) {
         setRevealDisplay(null);
       }
       return;
     }
+    setRevealContentVisible(false);
+    setRevealExitActive(false);
+    revealContentTimerRef.current = window.setTimeout(() => {
+      setRevealContentVisible(true);
+      revealContentTimerRef.current = null;
+    }, REVEAL_FLIP_DURATION_MS);
+    if (!revealDisplay.correct) {
+      revealExitTimerRef.current = window.setTimeout(() => {
+        setRevealExitActive(true);
+        revealExitTimerRef.current = null;
+      }, REVEAL_EXIT_DELAY_MS);
+    }
     revealTimerRef.current = window.setTimeout(() => {
       setRevealDisplay(null);
       setReveal(null);
+      setRevealContentVisible(false);
+      setRevealExitActive(false);
       const pendingReveal = pendingRevealRef.current;
       if (pendingReveal) {
         setTimelines((prev) => ({
@@ -359,6 +427,14 @@ export default function HostGamePage() {
       if (revealTimerRef.current !== null) {
         window.clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
+      }
+      if (revealContentTimerRef.current !== null) {
+        window.clearTimeout(revealContentTimerRef.current);
+        revealContentTimerRef.current = null;
+      }
+      if (revealExitTimerRef.current !== null) {
+        window.clearTimeout(revealExitTimerRef.current);
+        revealExitTimerRef.current = null;
       }
     };
   }, [activePlayerId, isMock, reveal, revealDisplay]);
@@ -376,12 +452,13 @@ export default function HostGamePage() {
       revealForActive?.placementIndex ?? (tentativePlacementIndex ?? null);
     const current = revealForActive?.card ?? currentCard;
     const showCurrent = current && placementIndex !== null;
-    const highlight = revealForActive
-      ? revealForActive.correct
+    const faceDown = !revealForActive;
+    const highlight = revealContentVisible
+      ? revealForActive?.correct
         ? 'good'
         : 'bad'
       : undefined;
-    const faceDown = !revealForActive;
+    const isExiting = Boolean(revealForActive && !revealForActive.correct && revealExitActive);
 
     const baseTimeline = [...activeTimeline];
     const currentKey = current ? `${current.title}-${current.artist}-${current.year}` : 'current-card';
@@ -407,6 +484,7 @@ export default function HostGamePage() {
           key: currentKey,
           card: current,
           faceDown,
+          isExiting,
           highlight,
           isCurrent: true,
         });
@@ -415,6 +493,7 @@ export default function HostGamePage() {
         key: `${card.title}-${card.artist}-${card.year}`,
         card,
         faceDown: false,
+        isExiting: false,
         isCurrent: false,
       });
     });
@@ -424,13 +503,22 @@ export default function HostGamePage() {
         key: currentKey,
         card: current,
         faceDown,
+        isExiting,
         highlight,
         isCurrent: true,
       });
     }
 
     return items;
-  }, [activePlayerId, currentCard, revealDisplay, tentativePlacementIndex, timelines]);
+  }, [
+    activePlayerId,
+    currentCard,
+    revealContentVisible,
+    revealDisplay,
+    revealExitActive,
+    tentativePlacementIndex,
+    timelines,
+  ]);
 
   const playerCount = room?.players.length ?? 0;
   const turnNumber = room?.turnNumber ?? 0;

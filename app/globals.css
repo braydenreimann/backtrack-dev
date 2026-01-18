@@ -526,6 +526,7 @@ main {
   color: #0b0c10;
   border: 3px solid #ffffff;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 250ms ease, border-color 250ms ease;
 }
 
 .timeline-card-face.back {
@@ -588,6 +589,10 @@ main {
   box-shadow: 0 0 0 4px rgba(255, 92, 92, 0.7), 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
+.timeline-card.exiting {
+  animation: reveal-exit 450ms ease forwards;
+}
+
 @keyframes card-pop-up {
   0% {
     transform: rotateY(0deg) scale(0.96);
@@ -628,6 +633,17 @@ main {
   }
   80% {
     transform: translateX(4px);
+  }
+}
+
+@keyframes reveal-exit {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-24px);
+    opacity: 0;
   }
 }
 

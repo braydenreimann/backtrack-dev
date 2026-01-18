@@ -35,6 +35,7 @@ export type TimelineItem = {
   key: string;
   card: Card | null;
   faceDown: boolean;
+  isExiting: boolean;
   highlight?: 'good' | 'bad';
   isCurrent: boolean;
 };

@@ -9,7 +9,7 @@ export default function TimelineCard({ item }: TimelineCardProps) {
     <div
       className={`timeline-card ${item.faceDown ? 'face-down' : ''} ${
         item.highlight ? `reveal-${item.highlight}` : ''
-      } ${item.isCurrent ? 'current' : ''}`}
+      } ${item.isCurrent ? 'current' : ''} ${item.isExiting ? 'exiting' : ''}`}
       data-timeline-key={item.key}
     >
       <div className="timeline-card-inner">
