@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { getHostRoomCode, getHostSessionToken, setHostSession } from '@/lib/storage';
+import { getMockConfig } from '@/lib/mock';
 
 type AckOk = { ok: true } & Record<string, unknown>;
 
@@ -13,6 +14,8 @@ type AckResponse = AckOk | AckErr;
 
 export default function HostLandingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isMock, mockQuery } = getMockConfig(searchParams);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [canResume, setCanResume] = useState(false);
@@ -22,6 +25,10 @@ export default function HostLandingPage() {
   }, []);
 
   const createRoom = () => {
+    if (isMock) {
+      router.push(`/host/ABC123/lobby${mockQuery}`);
+      return;
+    }
     setLoading(true);
     setError(null);
     const socket = createSocket();
@@ -41,6 +48,10 @@ export default function HostLandingPage() {
   };
 
   const resumeRoom = () => {
+    if (isMock) {
+      router.push(`/host/ABC123/lobby${mockQuery}`);
+      return;
+    }
     const roomCode = getHostRoomCode();
     if (!roomCode) {
       return;

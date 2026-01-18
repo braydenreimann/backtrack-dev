@@ -219,66 +219,6 @@ main {
   text-align: center;
 }
 
-.timeline-view {
-  position: relative;
-  overflow: hidden;
-}
-
-.audio-panel {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  margin-top: 12px;
-}
-
-.audio-panel .status {
-  margin: 0;
-}
-
-.timeline-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
-  margin-top: 16px;
-  transition: all 250ms ease;
-}
-
-.timeline-card {
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  padding: 16px;
-  background: rgba(8, 12, 20, 0.7);
-  display: grid;
-  gap: 6px;
-}
-
-.timeline-card.compact {
-  padding: 12px;
-}
-
-.timeline-card.placeholder {
-  border-style: dashed;
-  border-color: rgba(245, 179, 1, 0.6);
-  color: var(--primary);
-}
-
-.timeline-year {
-  font-size: 1.2rem;
-  font-weight: 700;
-  color: var(--primary);
-}
-
-.timeline-title {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.timeline-artist {
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
 .reveal-banner {
   margin-top: 18px;
   padding: 16px;
@@ -309,26 +249,6 @@ main {
 
 .play-layout {
   gap: 18px;
-}
-
-.mystery-card {
-  margin: 12px 0;
-  padding: 14px 16px;
-  border-radius: 14px;
-  border: 1px dashed rgba(245, 179, 1, 0.7);
-  background: rgba(245, 179, 1, 0.1);
-  color: var(--primary);
-  font-weight: 600;
-  text-align: center;
-}
-
-.mystery-card.inline {
-  margin: 8px 0;
-}
-
-.timeline-chooser {
-  display: grid;
-  gap: 12px;
 }
 
 .list-stack {
@@ -397,28 +317,6 @@ main {
 
 .list-tail:hover {
   color: var(--text);
-}
-
-.drop-slot {
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 16px;
-  padding: 12px;
-  transition: border 150ms ease, background 150ms ease;
-}
-
-.drop-slot.selected {
-  border-color: rgba(245, 179, 1, 0.8);
-  background: rgba(245, 179, 1, 0.08);
-}
-
-.drop-slot.dragging {
-  border-color: rgba(245, 179, 1, 0.5);
-}
-
-.slot-label {
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: 6px;
 }
 
 .button.lock {
@@ -525,14 +423,31 @@ main {
 
 .timeline-stage {
   position: relative;
-  padding: 24px 0 40px;
+  --timeline-count: 10;
+  --timeline-target: 88vw;
+  --timeline-gap: clamp(8px, 1vw, 18px);
+  --timeline-pad: clamp(12px, 1.4vw, 28px);
+  --timeline-card-size: clamp(
+    150px,
+    calc(
+      (var(--timeline-target) - (var(--timeline-count) - 1) * var(--timeline-gap) - 2 * var(--timeline-pad)) /
+        var(--timeline-count)
+    ),
+    320px
+  );
+  --timeline-stage-pad-top: 24px;
+  --timeline-stage-pad-bottom: 40px;
+  --timeline-axis-y: calc(
+    var(--timeline-stage-pad-top) + var(--timeline-pad) + (var(--timeline-card-size) / 2)
+  );
+  padding: var(--timeline-stage-pad-top) 0 var(--timeline-stage-pad-bottom);
 }
 
 .timeline-axis {
   position: absolute;
   left: 0;
   right: 0;
-  top: 50%;
+  top: var(--timeline-axis-y);
   height: 1px;
   background: rgba(255, 255, 255, 0.12);
   z-index: 0;
@@ -540,37 +455,41 @@ main {
 
 .timeline-label {
   position: absolute;
-  bottom: 6px;
-  font-size: 0.7rem;
+  top: calc(var(--timeline-axis-y) + 16px);
+  font-size: 0.8rem;
   letter-spacing: 0.3em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.35);
 }
 
 .timeline-label.left {
-  left: 8px;
+  left: clamp(12px, 3vw, 32px);
 }
 
 .timeline-label.right {
-  right: 8px;
+  right: clamp(12px, 3vw, 32px);
 }
 
 .timeline-strip {
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 18px;
+  gap: var(--timeline-gap);
   align-items: center;
   justify-content: center;
   overflow-x: auto;
-  padding: 32px 48px;
-  min-width: 100%;
+  padding: var(--timeline-pad);
+  width: 100%;
+  max-width: var(--timeline-target);
+  margin: 0 auto;
 }
 
 .timeline-card {
-  width: clamp(130px, 9vw, 170px);
-  height: clamp(130px, 9vw, 170px);
+  width: var(--timeline-card-size);
+  height: var(--timeline-card-size);
   perspective: 1000px;
+  --card-font: clamp(12px, calc(var(--timeline-card-size) * 0.09), 22px);
+  --card-pad: clamp(10px, calc(var(--timeline-card-size) * 0.08), 20px);
 }
 
 .timeline-card-inner {
@@ -597,7 +516,8 @@ main {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 12px;
+  padding: var(--card-pad);
+  font-size: var(--card-font);
 }
 
 .timeline-card-face.front {
@@ -615,35 +535,36 @@ main {
 }
 
 .timeline-card-year {
-  font-size: 2.4rem;
+  font-size: 2.6em;
   font-weight: 800;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .timeline-card-title {
-  font-size: 0.8rem;
+  font-size: 0.9em;
   font-weight: 700;
   text-transform: uppercase;
   color: #4b5563;
-  margin-top: 8px;
+  margin-top: 0.6em;
 }
 
 .timeline-card-artist {
-  font-size: 0.7rem;
+  font-size: 0.8em;
   color: #6b7280;
 }
 
 .timeline-card-mystery {
-  font-size: 3rem;
+  font-size: 3em;
   font-weight: 800;
   opacity: 0.9;
 }
 
 .timeline-card-label {
-  font-size: 0.65rem;
+  font-size: 0.7em;
   text-transform: uppercase;
   letter-spacing: 0.2em;
-  margin-top: 6px;
+  margin-top: 0.6em;
 }
 
 .timeline-card.current .timeline-card-inner {

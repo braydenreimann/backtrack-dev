@@ -1,10 +1,11 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
 import { getPlayerRoomCode, getPlayerSessionToken, setPlayerSession } from '@/lib/storage';
+import { getMockConfig } from '@/lib/mock';
 
 type AckOk = { ok: true } & Record<string, unknown>;
 
@@ -14,6 +15,8 @@ type AckResponse = AckOk | AckErr;
 
 export default function PlayLandingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isMock, mockQuery } = getMockConfig(searchParams);
   const [roomCode, setRoomCode] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -21,11 +24,15 @@ export default function PlayLandingPage() {
   const [isPhone, setIsPhone] = useState<boolean | null>(null);
 
   useEffect(() => {
+    if (isMock) {
+      setIsPhone(true);
+      return;
+    }
     setIsPhone(isPhoneDevice(navigator.userAgent));
-  }, []);
+  }, [isMock]);
 
   useEffect(() => {
-    if (!isPhone) {
+    if (!isPhone || isMock) {
       return;
     }
     const token = getPlayerSessionToken();
@@ -33,12 +40,20 @@ export default function PlayLandingPage() {
     if (token && storedRoom) {
       router.replace(`/play/${storedRoom}`);
     }
-  }, [isPhone, router]);
+  }, [isMock, isPhone, router]);
 
   const submitJoin = (event: FormEvent) => {
     event.preventDefault();
-    if (!isPhone) {
+    if (!isPhone && !isMock) {
       setError('Please join from a phone.');
+      return;
+    }
+
+    if (isMock) {
+      const trimmedRoom = roomCode.trim().toUpperCase() || 'ABC123';
+      const trimmedName = name.trim() || 'Player';
+      setPlayerSession('mock-session', 'mock-player', trimmedRoom, trimmedName);
+      router.push(`/play/${trimmedRoom}${mockQuery}`);
       return;
     }
 

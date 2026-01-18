@@ -1,33 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { clearHostSession, getHostRoomCode, getHostSessionToken } from '@/lib/storage';
-
-type Card = {
-  title: string;
-  artist: string;
-  year: number;
-};
-
-type RoomPlayer = {
-  id: string;
-  name: string;
-  connected: boolean;
-  cardCount: number;
-};
-
-type RoomSnapshot = {
-  code: string;
-  seq: number;
-  phase: string;
-  activePlayerId: string | null;
-  turnNumber: number;
-  turnExpiresAt: number | null;
-  host: { connected: boolean };
-  players: RoomPlayer[];
-};
+import { getMockHostGameState } from '@/lib/fixtures';
+import { getMockConfig } from '@/lib/mock';
+import HostHeader from './HostHeader';
+import HostTurnBanner from './HostTurnBanner';
+import TimelineStrip from './TimelineStrip';
+import TurnTimer from './TurnTimer';
+import AudioPreviewControls from './AudioPreviewControls';
+import HostStatusBanners from './HostStatusBanners';
+import type { Card, RoomPlayer, RoomSnapshot, TimelineItem, TurnReveal } from './types';
 
 type TurnDealtHost = {
   activePlayerId: string;
@@ -48,41 +33,19 @@ type TurnPlaced = {
   placementIndex: number;
 };
 
-type TurnReveal = {
-  playerId: string;
-  card: Card;
-  correct: boolean;
-  placementIndex: number;
-  timeline: Card[];
-  reason: string;
-};
-
 type AckOk = { ok: true } & Record<string, unknown>;
 
 type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
 
-type TimelineItem = {
-  key: string;
-  card: Card | null;
-  faceDown: boolean;
-  highlight?: 'good' | 'bad';
-  isCurrent: boolean;
-};
-
 const TURN_DURATION_SECONDS = 40;
-
-const formatSeconds = (seconds: number | null) => {
-  if (seconds === null) {
-    return '--';
-  }
-  return `${Math.max(0, seconds)}s`;
-};
 
 export default function HostGamePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isMock, mockState } = getMockConfig(searchParams);
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const roomRef = useRef<RoomSnapshot | null>(null);
@@ -194,6 +157,23 @@ export default function HostGamePage() {
       return;
     }
 
+    if (isMock) {
+      const mock = getMockHostGameState(mockState);
+      setRoom({ ...mock.room, code: roomCode ?? mock.room.code });
+      setActivePlayerId(mock.activePlayerId);
+      setTurnExpiresAt(mock.turnExpiresAt);
+      setTimelines(mock.timelines);
+      setCurrentCard(mock.currentCard);
+      setTentativePlacementIndex(mock.tentativePlacementIndex);
+      setReveal(mock.reveal);
+      setStatus(mock.status);
+      setError(mock.error);
+      setPreviewState(mock.previewState);
+      setPreviewUrl(mock.previewUrl);
+      setIsPlaying(mock.isPlaying);
+      return;
+    }
+
     const hostSessionToken = getHostSessionToken();
     if (!hostSessionToken) {
       setError('Missing host session. Return to /host to create a room.');
@@ -302,16 +282,19 @@ export default function HostGamePage() {
       stopPreview(false);
       socket.disconnect();
     };
-  }, [roomCode, router, startPreview, stopPreview]);
+  }, [isMock, mockState, roomCode, router, startPreview, stopPreview]);
 
   useEffect(() => {
+    if (isMock) {
+      return;
+    }
     if (!room) {
       return;
     }
     if (room.phase === 'LOBBY') {
       router.replace(`/host/${roomCode}/lobby`);
     }
-  }, [room, roomCode, router]);
+  }, [isMock, room, roomCode, router]);
 
   useEffect(() => {
     if (!turnExpiresAt) {
@@ -330,6 +313,14 @@ export default function HostGamePage() {
   }, [turnExpiresAt]);
 
   useEffect(() => {
+    if (isMock) {
+      if (revealTimerRef.current !== null) {
+        window.clearTimeout(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+      setRevealDisplay(reveal);
+      return;
+    }
     if (revealTimerRef.current !== null) {
       window.clearTimeout(revealTimerRef.current);
       revealTimerRef.current = null;
@@ -349,7 +340,7 @@ export default function HostGamePage() {
         revealTimerRef.current = null;
       }
     };
-  }, [reveal, activePlayerId]);
+  }, [activePlayerId, isMock, reveal]);
 
   const activePlayer = useMemo(
     () => room?.players.find((player) => player.id === activePlayerId) ?? null,
@@ -418,108 +409,25 @@ export default function HostGamePage() {
 
   return (
     <div className="host-game">
-      <header className="host-game-header">
-        <div className="host-brand">
-          <div className="host-title">Backtrack</div>
-          <div className="host-deck">Classic</div>
-        </div>
-        <div className="host-score-row">
-          {(room?.players ?? []).map((player) => (
-            <div
-              key={player.id}
-              className={`host-score-chip ${player.id === activePlayerId ? 'active' : ''} ${
-                player.connected ? '' : 'disconnected'
-              }`}
-            >
-              <div className="host-score-name">{player.name}</div>
-              <div className="host-score-count">{player.cardCount}</div>
-            </div>
-          ))}
-        </div>
-      </header>
+      <HostHeader players={room?.players ?? []} activePlayerId={activePlayerId} />
 
-      <section className="host-turn">
-        <div className="host-round">Round {roundNumber}</div>
-        <div className="host-turn-name">
-          {activePlayer ? `${activePlayer.name}'s turn` : 'Waiting for players'}
-        </div>
-      </section>
+      <HostTurnBanner roundNumber={roundNumber} activePlayerName={activePlayer?.name ?? null} />
 
-      <section className="timeline-stage">
-        <div className="timeline-axis" />
-        <div className="timeline-label left">Oldest</div>
-        <div className="timeline-label right">Newest</div>
-        <div className="timeline-strip hide-scroll">
-          {timelineItems.length === 0 ? (
-            <div className="status">Timeline will appear here on the first turn.</div>
-          ) : (
-            timelineItems.map((item) => (
-              <div
-                className={`timeline-card ${item.faceDown ? 'face-down' : ''} ${
-                  item.highlight ? `reveal-${item.highlight}` : ''
-                } ${item.isCurrent ? 'current' : ''}`}
-                key={item.key}
-              >
-                <div className="timeline-card-inner">
-                  <div className="timeline-card-face front">
-                    {item.card ? (
-                      <>
-                        <div className="timeline-card-year">{item.card.year}</div>
-                        <div className="timeline-card-title">{item.card.title}</div>
-                        <div className="timeline-card-artist">{item.card.artist}</div>
-                      </>
-                    ) : (
-                      <div className="timeline-card-year">????</div>
-                    )}
-                  </div>
-                  <div className="timeline-card-face back">
-                    <div className="timeline-card-mystery">?</div>
-                    <div className="timeline-card-label">Mystery</div>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {revealDisplay ? (
-          <div className={`host-reveal ${revealDisplay.correct ? 'good' : 'bad'}`}>
-            <span>{revealDisplay.correct ? 'Correct!' : 'Incorrect'}</span>
-            <span>
-              {revealDisplay.card.title} — {revealDisplay.card.artist} ({revealDisplay.card.year})
-            </span>
-          </div>
-        ) : null}
-      </section>
+      <TimelineStrip items={timelineItems} revealDisplay={revealDisplay} />
 
       <section className="host-timer">
-        <div className="host-timer-text">Time: {formatSeconds(remainingSeconds)}</div>
-        <div className="host-timer-track">
-          <div className="host-timer-fill" style={{ width: `${progressPct}%` }} />
-        </div>
-
-        {room?.phase !== 'LOBBY' ? (
-          <div className="host-audio">
-            {previewState === 'loading' ? <div className="status">Searching iTunes preview...</div> : null}
-            {previewState === 'unavailable' ? (
-              <div className="status bad">Preview unavailable - continue without audio</div>
-            ) : null}
-            {previewState === 'blocked' ? (
-              <button className="button small" onClick={attemptPlay}>
-                Tap to Play Preview
-              </button>
-            ) : null}
-            {previewUrl && previewState === 'ready' ? (
-              <button className="button secondary small" onClick={togglePlay}>
-                {isPlaying ? 'Pause preview' : 'Play preview'}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        <TurnTimer remainingSeconds={remainingSeconds} progressPct={progressPct} />
+        <AudioPreviewControls
+          phase={room?.phase}
+          previewState={previewState}
+          previewUrl={previewUrl}
+          isPlaying={isPlaying}
+          onAttemptPlay={attemptPlay}
+          onTogglePlay={togglePlay}
+        />
       </section>
 
-      {status ? <div className="status">{status}</div> : null}
-      {error ? <div className="status bad">{error}</div> : null}
+      <HostStatusBanners status={status} error={error} />
     </div>
   );
 }

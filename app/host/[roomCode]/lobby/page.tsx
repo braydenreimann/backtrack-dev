@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { clearHostSession, getHostRoomCode, getHostSessionToken } from '@/lib/storage';
+import { getMockHostLobbyState } from '@/lib/fixtures';
+import { getMockConfig } from '@/lib/mock';
 
 type RoomPlayer = {
   id: string;
@@ -32,6 +34,8 @@ type AckResponse = AckOk | AckErr;
 export default function HostLobbyPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isMock, mockState, mockQuery } = getMockConfig(searchParams);
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
@@ -43,6 +47,14 @@ export default function HostLobbyPage() {
 
   useEffect(() => {
     if (!roomCode) {
+      return;
+    }
+
+    if (isMock) {
+      const mock = getMockHostLobbyState(mockState);
+      setRoom({ ...mock.room, code: roomCode ?? mock.room.code });
+      setStatus(mock.status);
+      setError(mock.error);
       return;
     }
 
@@ -93,14 +105,17 @@ export default function HostLobbyPage() {
     return () => {
       socket.disconnect();
     };
-  }, [roomCode, router]);
+  }, [isMock, mockState, roomCode, router]);
 
   useEffect(() => {
+    if (isMock) {
+      return;
+    }
     if (!room || room.phase === 'LOBBY') {
       return;
     }
     router.replace(`/host/${roomCode}/game`);
-  }, [room, roomCode, router]);
+  }, [isMock, room, roomCode, router]);
 
   const kickPlayer = (playerId: string) => {
     const socket = socketRef.current;
@@ -117,6 +132,10 @@ export default function HostLobbyPage() {
   };
 
   const deleteRoom = () => {
+    if (isMock) {
+      router.push(`/host${mockQuery}`);
+      return;
+    }
     if (!room || room.phase !== 'LOBBY') {
       setError('Room can only be deleted in the lobby.');
       return;
@@ -141,6 +160,10 @@ export default function HostLobbyPage() {
   };
 
   const startGame = () => {
+    if (isMock) {
+      router.push(`/host/${roomCode}/game${mockQuery}`);
+      return;
+    }
     const socket = socketRef.current;
     if (!socket) {
       return;

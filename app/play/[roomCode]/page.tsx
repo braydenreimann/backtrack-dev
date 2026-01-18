@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
 import {
@@ -12,6 +12,8 @@ import {
   getPlayerRoomCode,
   getPlayerSessionToken,
 } from '@/lib/storage';
+import { getMockPlayRoomState } from '@/lib/fixtures';
+import { getMockConfig } from '@/lib/mock';
 
 type Card = {
   title: string;
@@ -71,6 +73,8 @@ const formatTimer = (seconds: number | null) => {
 export default function PlayRoomPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isMock, mockState, mockQuery } = getMockConfig(searchParams);
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const kickedRef = useRef(false);
@@ -94,7 +98,10 @@ export default function PlayRoomPage() {
   const [lockHolding, setLockHolding] = useState(false);
   const kickMessage = 'You were removed by the host.';
 
-  const redirectToPlay = useCallback(() => router.replace('/play'), [router]);
+  const redirectToPlay = useCallback(
+    () => router.replace(isMock ? `/play${mockQuery}` : '/play'),
+    [isMock, mockQuery, router]
+  );
   const showKickAndRedirect = useCallback(() => {
     kickedRef.current = true;
     setKicked(true);
@@ -109,8 +116,12 @@ export default function PlayRoomPage() {
   }, [redirectToPlay]);
 
   useEffect(() => {
+    if (isMock) {
+      setIsPhone(true);
+      return;
+    }
     setIsPhone(isPhoneDevice(navigator.userAgent));
-  }, []);
+  }, [isMock]);
 
   useEffect(() => {
     const name = getPlayerName();
@@ -148,6 +159,38 @@ export default function PlayRoomPage() {
 
   useEffect(() => {
     if (!roomCode || isPhone === null) {
+      return;
+    }
+
+    if (isMock) {
+      const mock = getMockPlayRoomState(mockState);
+      const storedName = getPlayerName();
+      const storedId = getPlayerId();
+      const playerNameValue = storedName ?? mock.playerName;
+      const playerIdValue = storedId ?? mock.playerId;
+      const activePlayerIdValue =
+        mock.activePlayerId === mock.playerId ? playerIdValue : mock.activePlayerId;
+      const players = mock.room.players.map((player) =>
+        player.id === mock.playerId
+          ? { ...player, id: playerIdValue, name: playerNameValue }
+          : player
+      );
+      setRoom({
+        ...mock.room,
+        code: roomCode ?? mock.room.code,
+        activePlayerId: activePlayerIdValue,
+        players,
+      });
+      setActivePlayerId(activePlayerIdValue ?? null);
+      setTurnExpiresAt(mock.turnExpiresAt);
+      setStatus(mock.status);
+      setError(mock.error);
+      setPlayerName(playerNameValue);
+      setPlayerId(playerIdValue);
+      playerIdRef.current = playerIdValue;
+      setTimeline(mock.timeline);
+      setPlacementIndex(mock.placementIndex);
+      setReveal(mock.reveal);
       return;
     }
 
@@ -270,7 +313,7 @@ export default function PlayRoomPage() {
       }
       socket.disconnect();
     };
-  }, [isPhone, roomCode, redirectToPlay, showKickAndRedirect]);
+  }, [isMock, mockState, isPhone, roomCode, redirectToPlay, showKickAndRedirect]);
 
   const isActive = Boolean(
     playerId &&
@@ -315,6 +358,9 @@ export default function PlayRoomPage() {
   const placeAt = (index: number) => {
     const socket = socketRef.current;
     if (!socket) {
+      if (isMock) {
+        setPlacementIndex(index);
+      }
       return;
     }
     setPlacementIndex(index);
@@ -372,6 +418,11 @@ export default function PlayRoomPage() {
   };
 
   const leaveLobby = () => {
+    if (isMock) {
+      clearPlayerSession();
+      redirectToPlay();
+      return;
+    }
     const socket = socketRef.current;
     if (!socket) {
       clearPlayerSession();
