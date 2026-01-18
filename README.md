@@ -6,8 +6,8 @@
 
 ## Local dev
 1) Install web deps: `npm install`
-2) Start web app: `npm run dev` (http://localhost:3000)
-3) Start server (for real game flow): `cd server && npm install && npm run dev`
+3) Start server: `cd server && npm run dev`
+2) Start web app: `NEXT_PUBLIC_SOCKET_URL=http://10.0.0.110:3001 npm run dev` (http://localhost:3000)
 
 Notes:
 - The web app connects to `http://localhost:3001` by default via `NEXT_PUBLIC_SOCKET_URL`.
