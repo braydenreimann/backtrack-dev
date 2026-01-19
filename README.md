@@ -13,6 +13,19 @@ Notes:
 - The web app connects to `http://localhost:3001` by default via `NEXT_PUBLIC_SOCKET_URL`.
 - You can skip the server entirely when using mock mode (below).
 
+## Networking notes (local dev)
+Immediate fix (current behavior):
+- The Socket.IO client now allows polling fallback (`polling` -> `websocket`) and uses a short connect timeout.
+- This is more reliable on some Wi-Fi networks and iOS Safari, where WebSocket upgrades can fail intermittently.
+- If you see "Joining..." hang, verify the server is reachable at `http://<LAN_IP>:3001` from the phone.
+- To confirm WebSocket upgrades specifically, open `http://<LAN_IP>:3001/socket.io/?EIO=4&transport=websocket` on the phone.
+  - If polling works but this hangs, the network path is blocking WebSocket upgrades.
+
+Ideal long-term / production:
+- Use a stable DNS name and serve Socket.IO over HTTPS (same origin as the web app).
+- Ensure your reverse proxy allows WebSocket upgrades (Nginx/Cloudflare/etc).
+- Optionally restrict to WebSocket-only once the network path is known good.
+
 ## Manual UI testing (mock mode)
 Mock mode bypasses sockets and phone checks and renders using fixtures.
 
