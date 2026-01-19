@@ -64,7 +64,7 @@ export default function HostGamePage() {
   const [error, setError] = useState<string | null>(null);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
   const [turnExpiresAt, setTurnExpiresAt] = useState<number | null>(null);
-  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number | null>(null);
   const [currentCard, setCurrentCard] = useState<Card | null>(null);
   const [timelines, setTimelines] = useState<Record<string, Card[]>>({});
   const [tentativePlacementIndex, setTentativePlacementIndex] = useState<number | null>(null);
@@ -343,17 +343,17 @@ export default function HostGamePage() {
 
   useEffect(() => {
     if (!turnExpiresAt) {
-      setRemainingSeconds(null);
+      setRemainingMs(null);
       return;
     }
 
     const updateTimer = () => {
-      const remainingMs = turnExpiresAt - Date.now();
-      setRemainingSeconds(Math.max(0, Math.ceil(remainingMs / 1000)));
+      const remaining = Math.max(0, turnExpiresAt - Date.now());
+      setRemainingMs(remaining);
     };
 
     updateTimer();
-    const interval = window.setInterval(updateTimer, 250);
+    const interval = window.setInterval(updateTimer, 100);
     return () => window.clearInterval(interval);
   }, [turnExpiresAt]);
 
@@ -524,10 +524,11 @@ export default function HostGamePage() {
   const turnNumber = room?.turnNumber ?? 0;
   const roundNumber =
     playerCount > 0 ? Math.floor((Math.max(turnNumber, 1) - 1) / playerCount) + 1 : 1;
+  const remainingSeconds = remainingMs === null ? null : Math.ceil(remainingMs / 1000);
   const progressPct =
-    remainingSeconds === null
+    remainingMs === null
       ? 0
-      : Math.max(0, Math.min(100, (remainingSeconds / TURN_DURATION_SECONDS) * 100));
+      : Math.max(0, Math.min(100, (remainingMs / (TURN_DURATION_SECONDS * 1000)) * 100));
 
   return (
     <div className="host-game">

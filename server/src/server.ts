@@ -541,6 +541,17 @@ io.on('connection', (socket) => {
 
     bumpSeq(room);
     emitSnapshot(room);
+    if (room.phase !== 'LOBBY' && room.currentCard) {
+      const activePlayer = ensureActivePlayer(room);
+      if (activePlayer) {
+        socket.emit('turn.dealt.host', {
+          activePlayerId: activePlayer.id,
+          turnNumber: room.turnNumber,
+          card: room.currentCard,
+          timelines: buildTimelines(room),
+        });
+      }
+    }
     ack?.(ok({ roomCode }));
   });
 

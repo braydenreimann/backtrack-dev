@@ -694,7 +694,7 @@ main {
 .host-timer-fill {
   height: 100%;
   background: var(--primary);
-  transition: width 120ms linear;
+  transition: width 100ms linear;
 }
 
 .host-audio {
