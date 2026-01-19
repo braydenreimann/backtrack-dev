@@ -60,10 +60,39 @@ function PlayLandingPageContent() {
     setLoading(true);
     setError(null);
     const socket = createSocket();
+    let settled = false;
+    const joinTimeout = window.setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      setError('Unable to reach the game server. Check Wi-Fi and server IP.');
+      socket.disconnect();
+      setLoading(false);
+    }, 7000);
+
+    const handleConnectError = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(joinTimeout);
+      setError('Unable to reach the game server. Check Wi-Fi and server IP.');
+      socket.disconnect();
+      setLoading(false);
+    };
+
+    socket.on('connect_error', handleConnectError);
     const trimmedRoom = roomCode.trim().toUpperCase();
     const trimmedName = name.trim();
 
     socket.emit('room.join', { roomCode: trimmedRoom, name: trimmedName }, (response: AckResponse) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      window.clearTimeout(joinTimeout);
+      socket.off('connect_error', handleConnectError);
       if (response.ok) {
         const playerId = response.playerId as string;
         const playerSessionToken = response.playerSessionToken as string;
