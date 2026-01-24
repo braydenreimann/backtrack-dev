@@ -5,15 +5,25 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
 import {
+  clearRoomStorage,
   clearPlayerSession,
+  consumeRoomTermination,
+  getControllerHelpKey,
   getPlayerId,
   getPlayerName,
   getPlayerRoomCode,
   getPlayerSessionToken,
+  markRoomTerminated,
 } from '@/lib/storage';
 import { getMockPlayRoomState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-import type { Card, RoomSnapshot, TurnReveal } from '@/lib/game-types';
+import {
+  GAME_TERMINATED_EVENT,
+  type Card,
+  type GameTerminationPayload,
+  type RoomSnapshot,
+  type TurnReveal,
+} from '@/lib/game-types';
 import ControllerTimeline from './components/ControllerTimeline';
 import ControllerHand from './components/ControllerHand';
 import RevealButton from './components/RevealButton';
@@ -38,7 +48,7 @@ type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
 
-const HELP_KEY = 'bt:controller-help-dismissed';
+const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 const formatTimer = (seconds: number | null) => {
   if (seconds === null) {
@@ -57,7 +67,9 @@ export default function PlayerGamePage() {
   const roomRef = useRef<RoomSnapshot | null>(null);
   const playerIdRef = useRef<string | null>(null);
   const kickTimeoutRef = useRef<number | null>(null);
+  const terminationTimeoutRef = useRef<number | null>(null);
   const revealPendingRef = useRef(false);
+  const terminatedRef = useRef(false);
   const [isPhone, setIsPhone] = useState<boolean | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
@@ -75,6 +87,46 @@ export default function PlayerGamePage() {
   const redirectToPlay = useCallback(
     () => router.replace(isMock ? `/play${mockQuery}` : '/play'),
     [isMock, mockQuery, router]
+  );
+  const helpKey = roomCode ? getControllerHelpKey(roomCode) : null;
+
+  const handleTermination = useCallback(
+    (
+      payload: { reason: string; terminatedAt: number },
+      options?: { persistMarker?: boolean }
+    ) => {
+      if (terminatedRef.current) {
+        return;
+      }
+      if (roomCode) {
+        if (options?.persistMarker !== false) {
+          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
+        }
+        clearRoomStorage(roomCode);
+      }
+      if (kickTimeoutRef.current !== null) {
+        window.clearTimeout(kickTimeoutRef.current);
+        kickTimeoutRef.current = null;
+      }
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+        terminationTimeoutRef.current = null;
+      }
+      terminatedRef.current = true;
+      revealPendingRef.current = false;
+      setReveal(null);
+      setRevealBusy(false);
+      setPlacementIndex(null);
+      setTurnExpiresAt(null);
+      setRoom((prev) => (prev ? { ...prev, phase: 'END' } : prev));
+      setError(null);
+      setStatus('Game ended by host.');
+      socketRef.current?.disconnect();
+      terminationTimeoutRef.current = window.setTimeout(() => {
+        redirectToPlay();
+      }, TERMINATION_REDIRECT_DELAY_MS);
+    },
+    [redirectToPlay, roomCode]
   );
 
   useEffect(() => {
@@ -111,22 +163,32 @@ export default function PlayerGamePage() {
   }, [playerId]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (!helpKey || typeof window === 'undefined') {
       return;
     }
-    const dismissed = window.localStorage.getItem(HELP_KEY) === 'true';
+    const dismissed = window.localStorage.getItem(helpKey) === 'true';
     setHelpDismissed(dismissed);
-  }, []);
+  }, [helpKey]);
 
   useEffect(() => {
-    if (!reveal || helpDismissed) {
+    if (!reveal || helpDismissed || !helpKey) {
       return;
     }
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(HELP_KEY, 'true');
+      window.localStorage.setItem(helpKey, 'true');
     }
     setHelpDismissed(true);
-  }, [helpDismissed, reveal]);
+  }, [helpDismissed, helpKey, reveal]);
+
+  useEffect(() => {
+    if (!roomCode || isMock) {
+      return;
+    }
+    const record = consumeRoomTermination(roomCode);
+    if (record) {
+      handleTermination(record, { persistMarker: false });
+    }
+  }, [handleTermination, isMock, roomCode]);
 
   useEffect(() => {
     if (!turnExpiresAt) {
@@ -146,6 +208,9 @@ export default function PlayerGamePage() {
 
   useEffect(() => {
     if (!roomCode || isPhone === null) {
+      return;
+    }
+    if (terminatedRef.current) {
       return;
     }
 
@@ -262,8 +327,16 @@ export default function PlayerGamePage() {
       }
     });
 
+    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+      handleTermination(payload);
+    });
+
     socket.on('player.kicked', () => {
-      clearPlayerSession();
+      if (roomCode) {
+        clearRoomStorage(roomCode);
+      } else {
+        clearPlayerSession();
+      }
       setError('You were removed by the host.');
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
@@ -275,11 +348,18 @@ export default function PlayerGamePage() {
 
     socket.on('room.closed', (payload: { reason: string }) => {
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
-      clearPlayerSession();
+      if (roomCode) {
+        clearRoomStorage(roomCode);
+      } else {
+        clearPlayerSession();
+      }
       redirectToPlay();
     });
 
     socket.on('disconnect', () => {
+      if (terminatedRef.current) {
+        return;
+      }
       setStatus('Disconnected from server.');
       setError('Connection lost. Try rejoining.');
     });
@@ -294,13 +374,25 @@ export default function PlayerGamePage() {
         redirectToPlay();
         return;
       }
+      if (response.code === 'ROOM_TERMINATED') {
+        handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
+        return;
+      }
       if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        clearPlayerSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearPlayerSession();
+        }
         redirectToPlay();
         return;
       }
       if (response.code === 'NON_MOBILE_DEVICE') {
-        clearPlayerSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearPlayerSession();
+        }
         setError('Please join from a phone.');
         return;
       }
@@ -311,9 +403,21 @@ export default function PlayerGamePage() {
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
       }
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+      }
       socket.disconnect();
     };
-  }, [isMock, mockQuery, mockState, isPhone, redirectToPlay, roomCode, router]);
+  }, [
+    handleTermination,
+    isMock,
+    mockQuery,
+    mockState,
+    isPhone,
+    redirectToPlay,
+    roomCode,
+    router,
+  ]);
 
   const isActive = Boolean(
     playerId &&

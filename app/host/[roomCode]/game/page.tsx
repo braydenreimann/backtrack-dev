@@ -3,16 +3,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
-import { clearHostSession, getHostRoomCode, getHostSessionToken } from '@/lib/storage';
+import {
+  clearHostSession,
+  clearRoomStorage,
+  consumeRoomTermination,
+  getHostRoomCode,
+  getHostSessionToken,
+  markRoomTerminated,
+} from '@/lib/storage';
 import { getMockHostGameState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
+import { useFullscreen } from '@/lib/useFullscreen';
 import HostHeader from './HostHeader';
 import HostTurnBanner from './HostTurnBanner';
 import TimelineStripAnimated from './TimelineStripAnimated';
 import TurnTimer from './TurnTimer';
 import AudioPreviewControls from './AudioPreviewControls';
 import HostStatusBanners from './HostStatusBanners';
-import type { Card, RoomSnapshot, TimelineItem, TurnReveal } from '@/lib/game-types';
+import {
+  GAME_TERMINATE_EVENT,
+  GAME_TERMINATED_EVENT,
+  type Card,
+  type GameTerminationPayload,
+  type RoomSnapshot,
+  type TimelineItem,
+  type TurnReveal,
+} from '@/lib/game-types';
 
 type TurnDealtHost = {
   activePlayerId: string;
@@ -44,6 +60,7 @@ const REVEAL_DURATION_MS = 3000;
 const REVEAL_FLIP_DURATION_MS = 700;
 const REVEAL_EXIT_DURATION_MS = 500;
 const REVEAL_EXIT_DELAY_MS = Math.max(0, REVEAL_DURATION_MS - REVEAL_EXIT_DURATION_MS);
+const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 export default function HostGamePage() {
   const params = useParams();
@@ -53,12 +70,15 @@ export default function HostGamePage() {
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const roomRef = useRef<RoomSnapshot | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lookupIdRef = useRef(0);
   const revealTimerRef = useRef<number | null>(null);
   const revealContentTimerRef = useRef<number | null>(null);
   const revealExitTimerRef = useRef<number | null>(null);
   const pendingRevealRef = useRef<TurnReveal | null>(null);
+  const terminationTimeoutRef = useRef<number | null>(null);
+  const terminatedRef = useRef(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState<string>('Connecting to game...');
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +97,24 @@ export default function HostGamePage() {
   );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
+  const [endGameBusy, setEndGameBusy] = useState(false);
+
+  const {
+    isFullscreen,
+    isSupported: isFullscreenSupported,
+    error: fullscreenError,
+    toggleFullscreen,
+    clearError: clearFullscreenError,
+  } = useFullscreen(hostRef, { enableHotkeys: true });
+
+  useEffect(() => {
+    if (!fullscreenError) {
+      return;
+    }
+    const timeout = window.setTimeout(() => clearFullscreenError(), 2400);
+    return () => window.clearTimeout(timeout);
+  }, [clearFullscreenError, fullscreenError]);
 
   const clearRevealState = useCallback(() => {
     if (revealTimerRef.current !== null) {
@@ -111,6 +149,95 @@ export default function HostGamePage() {
       setPreviewState('idle');
     }
   }, []);
+
+  const handleTermination = useCallback(
+    (
+      payload: { reason: string; terminatedAt: number },
+      options?: { persistMarker?: boolean }
+    ) => {
+      if (terminatedRef.current) {
+        return;
+      }
+      if (roomCode) {
+        if (options?.persistMarker !== false) {
+          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
+        }
+        clearRoomStorage(roomCode);
+      } else {
+        clearHostSession();
+      }
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+        terminationTimeoutRef.current = null;
+      }
+      terminatedRef.current = true;
+      clearRevealState();
+      stopPreview();
+      setCurrentCard(null);
+      setTentativePlacementIndex(null);
+      setTurnExpiresAt(null);
+      setActivePlayerId(null);
+      setShowEndGameConfirm(false);
+      setEndGameBusy(false);
+      setError(null);
+      setStatus('Game ended by host.');
+      socketRef.current?.disconnect();
+      terminationTimeoutRef.current = window.setTimeout(() => {
+        router.replace('/host');
+      }, TERMINATION_REDIRECT_DELAY_MS);
+    },
+    [clearRevealState, roomCode, router, stopPreview]
+  );
+
+  useEffect(() => {
+    if (!roomCode || isMock) {
+      return;
+    }
+    const record = consumeRoomTermination(roomCode);
+    if (record) {
+      handleTermination(record, { persistMarker: false });
+    }
+  }, [handleTermination, isMock, roomCode]);
+
+  const requestEndGame = () => {
+    if (endGameBusy || terminatedRef.current) {
+      return;
+    }
+    setShowEndGameConfirm(true);
+  };
+
+  const cancelEndGame = () => {
+    if (endGameBusy) {
+      return;
+    }
+    setShowEndGameConfirm(false);
+  };
+
+  const confirmEndGame = () => {
+    if (endGameBusy) {
+      return;
+    }
+    setEndGameBusy(true);
+    if (isMock) {
+      handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
+      return;
+    }
+    const socket = socketRef.current;
+    if (!socket) {
+      setError('Unable to reach the game server.');
+      setEndGameBusy(false);
+      return;
+    }
+    socket.emit(GAME_TERMINATE_EVENT, { reason: 'HOST_ENDED' }, (response: AckResponse) => {
+      if (!response.ok) {
+        setError(response.message ?? 'Unable to end the game.');
+        setEndGameBusy(false);
+        return;
+      }
+      setShowEndGameConfirm(false);
+      setEndGameBusy(false);
+    });
+  };
 
   const attemptPlay = async () => {
     const audio = audioRef.current;
@@ -183,6 +310,9 @@ export default function HostGamePage() {
 
   useEffect(() => {
     if (!roomCode) {
+      return;
+    }
+    if (terminatedRef.current) {
       return;
     }
 
@@ -301,10 +431,21 @@ export default function HostGamePage() {
       stopPreview();
     });
 
+    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+      handleTermination(payload);
+    });
+
     socket.on('room.closed', (payload: { reason: string }) => {
+      if (terminatedRef.current) {
+        return;
+      }
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
       stopPreview();
-      clearHostSession();
+      if (roomCode) {
+        clearRoomStorage(roomCode);
+      } else {
+        clearHostSession();
+      }
       router.replace('/host');
     });
 
@@ -312,8 +453,16 @@ export default function HostGamePage() {
       if (response.ok) {
         return;
       }
+      if (response.code === 'ROOM_TERMINATED') {
+        handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
+        return;
+      }
       if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        clearHostSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearHostSession();
+        }
         setError('Host session expired. Create a new room.');
         router.replace('/host');
         return;
@@ -323,9 +472,21 @@ export default function HostGamePage() {
 
     return () => {
       stopPreview(false);
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+      }
       socket.disconnect();
     };
-  }, [clearRevealState, isMock, mockState, roomCode, router, startPreview, stopPreview]);
+  }, [
+    clearRevealState,
+    handleTermination,
+    isMock,
+    mockState,
+    roomCode,
+    router,
+    startPreview,
+    stopPreview,
+  ]);
 
   useEffect(() => {
     if (isMock) {
@@ -527,10 +688,20 @@ export default function HostGamePage() {
     remainingMs === null
       ? 0
       : Math.max(0, Math.min(100, (remainingMs / (TURN_DURATION_SECONDS * 1000)) * 100));
+  const isEndGameDisabled = endGameBusy || terminatedRef.current;
 
   return (
-    <div className="host-game">
-      <HostHeader players={room?.players ?? []} activePlayerId={activePlayerId} />
+    <div className={`host-game ${isFullscreen ? 'is-fullscreen' : ''}`} ref={hostRef}>
+      <HostHeader
+        players={room?.players ?? []}
+        activePlayerId={activePlayerId}
+        isFullscreen={isFullscreen}
+        isFullscreenSupported={isFullscreenSupported}
+        fullscreenError={fullscreenError}
+        onToggleFullscreen={toggleFullscreen}
+        onRequestEndGame={requestEndGame}
+        endGameDisabled={isEndGameDisabled}
+      />
 
       <HostTurnBanner roundNumber={roundNumber} activePlayerName={activePlayer?.name ?? null} />
 
@@ -549,6 +720,33 @@ export default function HostGamePage() {
       </section>
 
       <HostStatusBanners status={status} error={error} />
+
+      {showEndGameConfirm ? (
+        <div className="host-modal" role="dialog" aria-modal="true" onClick={cancelEndGame}>
+          <div className="host-modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="host-modal-title">End game for everyone?</div>
+            <div className="host-modal-body">This will end the session for all players.</div>
+            <div className="host-modal-actions">
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={cancelEndGame}
+                disabled={endGameBusy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="button danger small"
+                onClick={confirmEndGame}
+                disabled={endGameBusy}
+              >
+                {endGameBusy ? 'Ending...' : 'End game'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

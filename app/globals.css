@@ -53,6 +53,11 @@ main {
   padding: 48px 20px;
 }
 
+main:has(.host-game) {
+  padding-top: 0;
+  align-items: flex-start;
+}
+
 .container {
   width: min(760px, 100%);
   display: grid;
@@ -347,17 +352,49 @@ main {
   min-height: calc(100vh - 96px);
 }
 
+.host-game.is-fullscreen {
+  min-height: 100vh;
+}
+
 .host-game-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   gap: 24px;
-  flex-wrap: wrap;
+}
+
+.host-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  justify-self: end;
+  min-width: 0;
+}
+
+.host-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.host-fullscreen-toggle {
+  letter-spacing: 0;
+}
+
+.host-fullscreen-message {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: right;
+  max-width: 200px;
 }
 
 .host-brand {
   display: grid;
   gap: 6px;
+  justify-self: start;
+  min-width: 0;
 }
 
 .host-title {
@@ -376,25 +413,68 @@ main {
 
 .host-score-row {
   display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 14px;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-self: center;
+}
+
+.host-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 14, 0.7);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 30;
+}
+
+.host-modal-card {
+  width: min(92vw, 360px);
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+
+.host-modal-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.host-modal-body {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.host-modal-actions {
+  display: flex;
   justify-content: flex-end;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .host-score-chip {
-  min-width: 120px;
-  padding: 8px 14px;
+  min-width: 136px;
+  padding: 10px 18px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: rgba(12, 18, 30, 0.7);
   display: grid;
-  gap: 4px;
+  gap: 6px;
   justify-items: center;
 }
 
 .host-score-chip.active {
-  border-color: rgba(245, 179, 1, 0.8);
-  box-shadow: 0 0 0 2px rgba(245, 179, 1, 0.2);
+  background: var(--primary);
+  border-color: rgba(245, 179, 1, 0.9);
+  color: #1a1300;
 }
 
 .host-score-chip.disconnected {
@@ -402,14 +482,86 @@ main {
 }
 
 .host-score-name {
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
+  line-height: 1.1;
 }
 
 .host-score-count {
-  font-size: 1.2rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: var(--primary);
+  line-height: 1;
+}
+
+.host-score-chip.active .host-score-name,
+.host-score-chip.active .host-score-count {
+  color: #1a1300;
+}
+
+.host-icon-button {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: rgba(244, 242, 237, 0.9);
+}
+
+.host-icon-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
+}
+
+.host-header-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.host-overflow {
+  position: relative;
+}
+
+.host-overflow-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 140px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(12, 18, 30, 0.95);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+  z-index: 20;
+}
+
+.host-overflow-item {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.host-overflow-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.host-overflow-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.host-overflow-item.danger {
+  color: var(--danger);
 }
 
 .host-turn {
@@ -1045,6 +1197,11 @@ main {
 @media (max-width: 640px) {
   main {
     padding: 24px 16px;
+  }
+
+  main:has(.host-game) {
+    padding-top: 0;
+    align-items: flex-start;
   }
 
   .card {

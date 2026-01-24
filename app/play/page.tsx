@@ -100,7 +100,11 @@ function PlayLandingPageContent() {
         socket.disconnect();
         router.push(`/play/${trimmedRoom}`);
       } else {
-        setError(response.message ?? 'Unable to join room.');
+        if (response.code === 'ROOM_TERMINATED') {
+          setError('This room has already ended. Ask the host for a new code.');
+        } else {
+          setError(response.message ?? 'Unable to join room.');
+        }
         socket.disconnect();
         setLoading(false);
         if (response.code === 'NON_MOBILE_DEVICE') {

@@ -39,3 +39,12 @@ export type TimelineItem = {
   highlight?: 'good' | 'bad';
   isCurrent: boolean;
 };
+
+export const GAME_TERMINATED_EVENT = 'game.terminated';
+export const GAME_TERMINATE_EVENT = 'game.terminate';
+
+export type GameTerminationPayload = {
+  roomCode: string;
+  reason: string;
+  terminatedAt: number;
+};

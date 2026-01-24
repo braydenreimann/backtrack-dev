@@ -1,18 +1,27 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
-import { clearHostSession, getHostRoomCode, getHostSessionToken } from '@/lib/storage';
+import {
+  clearHostSession,
+  clearRoomStorage,
+  consumeRoomTermination,
+  getHostRoomCode,
+  getHostSessionToken,
+  markRoomTerminated,
+} from '@/lib/storage';
 import { getMockHostLobbyState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-import type { RoomSnapshot } from '@/lib/game-types';
+import { GAME_TERMINATED_EVENT, type GameTerminationPayload, type RoomSnapshot } from '@/lib/game-types';
 
 type AckOk = { ok: true } & Record<string, unknown>;
 
 type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
+
+const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 export default function HostLobbyPage() {
   const params = useParams();
@@ -21,6 +30,8 @@ export default function HostLobbyPage() {
   const { isMock, mockState, mockQuery } = getMockConfig(searchParams);
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
+  const terminationTimeoutRef = useRef<number | null>(null);
+  const terminatedRef = useRef(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState<string>('Connecting to lobby...');
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +39,49 @@ export default function HostLobbyPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
 
+  const handleTermination = useCallback(
+    (payload: { reason: string; terminatedAt: number }, options?: { persistMarker?: boolean }) => {
+      if (terminatedRef.current) {
+        return;
+      }
+      if (roomCode) {
+        if (options?.persistMarker !== false) {
+          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
+        }
+        clearRoomStorage(roomCode);
+      } else {
+        clearHostSession();
+      }
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+        terminationTimeoutRef.current = null;
+      }
+      terminatedRef.current = true;
+      setError(null);
+      setStatus('Game ended by host.');
+      socketRef.current?.disconnect();
+      terminationTimeoutRef.current = window.setTimeout(() => {
+        router.replace('/host');
+      }, TERMINATION_REDIRECT_DELAY_MS);
+    },
+    [roomCode, router]
+  );
+
+  useEffect(() => {
+    if (!roomCode || isMock) {
+      return;
+    }
+    const record = consumeRoomTermination(roomCode);
+    if (record) {
+      handleTermination(record, { persistMarker: false });
+    }
+  }, [handleTermination, isMock, roomCode]);
+
   useEffect(() => {
     if (!roomCode) {
+      return;
+    }
+    if (terminatedRef.current) {
       return;
     }
 
@@ -66,9 +118,20 @@ export default function HostLobbyPage() {
       router.replace(`/host/${roomCode}/game`);
     });
 
+    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+      handleTermination(payload);
+    });
+
     socket.on('room.closed', (payload: { reason: string }) => {
+      if (terminatedRef.current) {
+        return;
+      }
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
-      clearHostSession();
+      if (roomCode) {
+        clearRoomStorage(roomCode);
+      } else {
+        clearHostSession();
+      }
       router.replace('/host');
     });
 
@@ -76,8 +139,16 @@ export default function HostLobbyPage() {
       if (response.ok) {
         return;
       }
+      if (response.code === 'ROOM_TERMINATED') {
+        handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
+        return;
+      }
       if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        clearHostSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearHostSession();
+        }
         setError('Host session expired. Create a new room.');
         router.replace('/host');
         return;
@@ -86,9 +157,12 @@ export default function HostLobbyPage() {
     });
 
     return () => {
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+      }
       socket.disconnect();
     };
-  }, [isMock, mockState, roomCode, router]);
+  }, [handleTermination, isMock, mockState, roomCode, router]);
 
   useEffect(() => {
     if (isMock) {

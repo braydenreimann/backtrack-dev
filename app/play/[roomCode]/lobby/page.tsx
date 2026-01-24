@@ -5,20 +5,25 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
 import {
+  clearRoomStorage,
   clearPlayerSession,
+  consumeRoomTermination,
   getPlayerName,
   getPlayerRoomCode,
   getPlayerSessionToken,
+  markRoomTerminated,
 } from '@/lib/storage';
 import { getMockPlayRoomState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-import type { RoomSnapshot } from '@/lib/game-types';
+import { GAME_TERMINATED_EVENT, type GameTerminationPayload, type RoomSnapshot } from '@/lib/game-types';
 
 type AckOk = { ok: true } & Record<string, unknown>;
 
 type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
+
+const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 export default function PlayLobbyPage() {
   const params = useParams();
@@ -28,6 +33,8 @@ export default function PlayLobbyPage() {
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const kickTimeoutRef = useRef<number | null>(null);
+  const terminationTimeoutRef = useRef<number | null>(null);
+  const terminatedRef = useRef(false);
   const [isPhone, setIsPhone] = useState<boolean | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState('Connecting to lobby...');
@@ -39,6 +46,35 @@ export default function PlayLobbyPage() {
   const redirectToPlay = useCallback(
     () => router.replace(isMock ? `/play${mockQuery}` : '/play'),
     [isMock, mockQuery, router]
+  );
+
+  const handleTermination = useCallback(
+    (payload: { reason: string; terminatedAt: number }, options?: { persistMarker?: boolean }) => {
+      if (roomCode) {
+        if (options?.persistMarker !== false) {
+          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
+        }
+        clearRoomStorage(roomCode);
+      } else {
+        clearPlayerSession();
+      }
+      if (kickTimeoutRef.current !== null) {
+        window.clearTimeout(kickTimeoutRef.current);
+        kickTimeoutRef.current = null;
+      }
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+        terminationTimeoutRef.current = null;
+      }
+      terminatedRef.current = true;
+      setError(null);
+      setStatus('Game ended by host.');
+      socketRef.current?.disconnect();
+      terminationTimeoutRef.current = window.setTimeout(() => {
+        redirectToPlay();
+      }, TERMINATION_REDIRECT_DELAY_MS);
+    },
+    [redirectToPlay, roomCode]
   );
 
   useEffect(() => {
@@ -57,7 +93,20 @@ export default function PlayLobbyPage() {
   }, []);
 
   useEffect(() => {
+    if (!roomCode || isMock) {
+      return;
+    }
+    const record = consumeRoomTermination(roomCode);
+    if (record) {
+      handleTermination(record, { persistMarker: false });
+    }
+  }, [handleTermination, isMock, roomCode]);
+
+  useEffect(() => {
     if (!roomCode || isPhone === null) {
+      return;
+    }
+    if (terminatedRef.current) {
       return;
     }
 
@@ -106,9 +155,17 @@ export default function PlayLobbyPage() {
       router.replace(`/play/${roomCode}/game`);
     });
 
+    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+      handleTermination(payload);
+    });
+
     socket.on('player.kicked', () => {
       setKicked(true);
-      clearPlayerSession();
+      if (roomCode) {
+        clearRoomStorage(roomCode);
+      } else {
+        clearPlayerSession();
+      }
       setError('You were removed by the host.');
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
@@ -120,11 +177,18 @@ export default function PlayLobbyPage() {
 
     socket.on('room.closed', (payload: { reason: string }) => {
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
-      clearPlayerSession();
+      if (roomCode) {
+        clearRoomStorage(roomCode);
+      } else {
+        clearPlayerSession();
+      }
       redirectToPlay();
     });
 
     socket.on('disconnect', () => {
+      if (terminatedRef.current) {
+        return;
+      }
       setStatus('Disconnected from server.');
       setError('Connection lost. Try rejoining.');
     });
@@ -135,18 +199,34 @@ export default function PlayLobbyPage() {
       }
       if (response.code === 'KICKED') {
         setKicked(true);
-        clearPlayerSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearPlayerSession();
+        }
         setError('You were removed by the host.');
         redirectToPlay();
         return;
       }
+      if (response.code === 'ROOM_TERMINATED') {
+        handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
+        return;
+      }
       if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        clearPlayerSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearPlayerSession();
+        }
         redirectToPlay();
         return;
       }
       if (response.code === 'NON_MOBILE_DEVICE') {
-        clearPlayerSession();
+        if (roomCode) {
+          clearRoomStorage(roomCode);
+        } else {
+          clearPlayerSession();
+        }
         setError('Please join from a phone.');
         return;
       }
@@ -157,9 +237,21 @@ export default function PlayLobbyPage() {
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
       }
+      if (terminationTimeoutRef.current !== null) {
+        window.clearTimeout(terminationTimeoutRef.current);
+      }
       socket.disconnect();
     };
-  }, [isMock, mockQuery, mockState, isPhone, redirectToPlay, roomCode, router]);
+  }, [
+    handleTermination,
+    isMock,
+    mockQuery,
+    mockState,
+    isPhone,
+    redirectToPlay,
+    roomCode,
+    router,
+  ]);
 
   useEffect(() => {
     if (isMock) {

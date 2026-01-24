@@ -33,6 +33,8 @@ type RoomState = {
   seq: number;
   phase: RoomPhase;
   createdAt: number;
+  terminatedAt: number | null;
+  terminationReason: string | null;
   host: HostState;
   players: PlayerState[];
   nextPlayerNumber: number;
@@ -86,10 +88,22 @@ type PlacePayload = {
   placementIndex: number;
 };
 
+type TerminatePayload = {
+  reason?: string;
+};
+
+type TerminationRecord = {
+  roomCode: string;
+  reason: string;
+  terminatedAt: number;
+  expiresAt: number;
+};
+
 const ROOM_CODE_LENGTH = 6;
 const TURN_DURATION_MS = 40_000;
 const REVEAL_DURATION_MS = 3000;
 const WIN_CARD_COUNT = 10;
+const TERMINATION_TTL_MS = 10 * 60 * 1000;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,6 +129,8 @@ const rooms = new Map<string, RoomState>();
 const hostSessions = new Map<string, string>();
 const playerSessions = new Map<string, { roomCode: string; playerId: string }>();
 const socketIndex = new Map<string, ConnectionIndex>();
+const terminatedRooms = new Map<string, TerminationRecord>();
+const terminatedSessions = new Map<string, TerminationRecord>();
 
 const httpServer = createServer();
 const io = new Server(httpServer, {
@@ -141,7 +157,7 @@ const nextRoomCode = (): string | null => {
     for (let i = 0; i < ROOM_CODE_LENGTH; i += 1) {
       code += ROOM_CODE_CHARS[randomInt(ROOM_CODE_CHARS.length)];
     }
-    if (!rooms.has(code)) {
+    if (!rooms.has(code) && !getTerminationRecordByRoom(code)) {
       return code;
     }
   }
@@ -155,6 +171,60 @@ const shuffleCards = (cards: Card[]): Card[] => {
     [deck[i], deck[j]] = [deck[j], deck[i]];
   }
   return deck;
+};
+
+const buildTerminationRecord = (
+  roomCode: string,
+  reason: string,
+  terminatedAt: number
+): TerminationRecord => ({
+  roomCode,
+  reason,
+  terminatedAt,
+  expiresAt: terminatedAt + TERMINATION_TTL_MS,
+});
+
+const getTerminationRecordByRoom = (roomCode: string): TerminationRecord | null => {
+  const record = terminatedRooms.get(roomCode);
+  if (!record) {
+    return null;
+  }
+  if (record.expiresAt <= Date.now()) {
+    terminatedRooms.delete(roomCode);
+    return null;
+  }
+  return record;
+};
+
+const getTerminationRecordBySession = (sessionToken: string): TerminationRecord | null => {
+  const record = terminatedSessions.get(sessionToken);
+  if (!record) {
+    return null;
+  }
+  if (record.expiresAt <= Date.now()) {
+    terminatedSessions.delete(sessionToken);
+    return null;
+  }
+  return record;
+};
+
+const rememberTermination = (room: RoomState, reason: string, terminatedAt: number) => {
+  const record = buildTerminationRecord(room.code, reason, terminatedAt);
+  terminatedRooms.set(room.code, record);
+  const sessionTokens = [room.host.sessionToken, ...room.players.map((player) => player.sessionToken)];
+  sessionTokens.forEach((token) => terminatedSessions.set(token, record));
+  setTimeout(() => {
+    const existing = terminatedRooms.get(room.code);
+    if (existing && existing.terminatedAt === terminatedAt) {
+      terminatedRooms.delete(room.code);
+    }
+    sessionTokens.forEach((token) => {
+      const sessionRecord = terminatedSessions.get(token);
+      if (sessionRecord && sessionRecord.terminatedAt === terminatedAt) {
+        terminatedSessions.delete(token);
+      }
+    });
+  }, TERMINATION_TTL_MS);
 };
 
 const clearRoomTimers = (room: RoomState) => {
@@ -239,6 +309,13 @@ const emitSnapshot = (room: RoomState) => {
   io.to(room.code).emit('room.snapshot', serializeRoom(room));
 };
 
+const formatTerminationMessage = (record: TerminationRecord) => {
+  if (record.reason === 'HOST_ENDED') {
+    return 'Game ended by the host.';
+  }
+  return `Room ended (${record.reason}).`;
+};
+
 const disconnectSocket = (socketId?: string) => {
   if (!socketId) {
     return;
@@ -250,9 +327,11 @@ const disconnectSocket = (socketId?: string) => {
   socketIndex.delete(socketId);
 };
 
-const closeRoom = (room: RoomState, reason: string) => {
+const teardownRoom = (room: RoomState, reason: string, emitClosed: boolean) => {
   clearRoomTimers(room);
-  io.to(room.code).emit('room.closed', { reason });
+  if (emitClosed) {
+    io.to(room.code).emit('room.closed', { reason });
+  }
   hostSessions.delete(room.host.sessionToken);
   for (const player of room.players) {
     playerSessions.delete(player.sessionToken);
@@ -262,14 +341,47 @@ const closeRoom = (room: RoomState, reason: string) => {
   rooms.delete(room.code);
 };
 
+const closeRoom = (room: RoomState, reason: string) => {
+  teardownRoom(room, reason, true);
+};
+
 const endGame = (room: RoomState, payload: { winnerId?: string; reason: string }) => {
   clearRoomTimers(room);
   room.phase = 'END';
   room.currentCard = null;
   room.tentativePlacementIndex = null;
+  room.turnExpiresAt = null;
   bumpSeq(room);
   emitSnapshot(room);
   io.to(room.code).emit('game.ended', payload);
+};
+
+const terminateRoom = (room: RoomState, reason: string) => {
+  if (room.terminatedAt) {
+    return;
+  }
+  const terminatedAt = Date.now();
+  room.terminatedAt = terminatedAt;
+  room.terminationReason = reason;
+  clearRoomTimers(room);
+  room.phase = 'END';
+  room.currentCard = null;
+  room.tentativePlacementIndex = null;
+  room.turnExpiresAt = null;
+  bumpSeq(room);
+  emitSnapshot(room);
+  io.to(room.code).emit('game.terminated', {
+    roomCode: room.code,
+    reason,
+    terminatedAt,
+  });
+  rememberTermination(room, reason, terminatedAt);
+  setTimeout(() => {
+    const existing = rooms.get(room.code);
+    if (existing && existing.terminatedAt === terminatedAt) {
+      teardownRoom(existing, reason, false);
+    }
+  }, 100);
 };
 
 const seedTimelines = (room: RoomState) => {
@@ -290,7 +402,13 @@ const scheduleNextTurn = (room: RoomState, delayMs: number) => {
   if (room.revealTimer) {
     clearTimeout(room.revealTimer);
   }
+  if (room.terminatedAt) {
+    return;
+  }
   room.revealTimer = setTimeout(() => {
+    if (room.terminatedAt) {
+      return;
+    }
     advanceToNextPlayer(room);
     startTurn(room);
   }, delayMs);
@@ -322,6 +440,9 @@ const emitTurnDealt = (room: RoomState, activePlayer: PlayerState, card: Card, e
 };
 
 const resolveLock = (room: RoomState, reason: 'LOCK' | 'TIMEOUT') => {
+  if (room.terminatedAt) {
+    return;
+  }
   const activePlayer = ensureActivePlayer(room);
   if (!activePlayer || !room.currentCard || room.tentativePlacementIndex === null) {
     return;
@@ -366,6 +487,9 @@ const resolveLock = (room: RoomState, reason: 'LOCK' | 'TIMEOUT') => {
 };
 
 const startTurn = (room: RoomState) => {
+  if (room.terminatedAt) {
+    return;
+  }
   clearRoomTimers(room);
   const activePlayer = ensureActivePlayer(room);
   if (!activePlayer) {
@@ -402,6 +526,9 @@ const handleTurnTimeout = (roomCode: string) => {
   if (!room) {
     return;
   }
+  if (room.terminatedAt) {
+    return;
+  }
   if (!room.currentCard) {
     return;
   }
@@ -431,6 +558,8 @@ io.on('connection', (socket) => {
       seq: 0,
       phase: 'LOBBY',
       createdAt: Date.now(),
+      terminatedAt: null,
+      terminationReason: null,
       host: {
         sessionToken: hostSessionToken,
         socketId: socket.id,
@@ -466,9 +595,19 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const termination = getTerminationRecordByRoom(roomCode);
+    if (termination) {
+      ack?.(err('ROOM_TERMINATED', formatTerminationMessage(termination)));
+      return;
+    }
+
     const room = rooms.get(roomCode);
     if (!room) {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
     if (room.phase !== 'LOBBY') {
@@ -512,6 +651,12 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const terminated = getTerminationRecordBySession(hostSessionToken);
+    if (terminated) {
+      ack?.(err('ROOM_TERMINATED', formatTerminationMessage(terminated)));
+      return;
+    }
+
     const roomCode = hostSessions.get(hostSessionToken);
     if (!roomCode) {
       ack?.(err('SESSION_NOT_FOUND', 'Host session not found.'));
@@ -521,6 +666,10 @@ io.on('connection', (socket) => {
     const room = rooms.get(roomCode);
     if (!room) {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
 
@@ -556,6 +705,12 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const terminated = getTerminationRecordBySession(playerSessionToken);
+    if (terminated) {
+      ack?.(err('ROOM_TERMINATED', formatTerminationMessage(terminated)));
+      return;
+    }
+
     const session = playerSessions.get(playerSessionToken);
     if (!session) {
       ack?.(err('SESSION_NOT_FOUND', 'Player session not found.'));
@@ -565,6 +720,10 @@ io.on('connection', (socket) => {
     const room = rooms.get(session.roomCode);
     if (!room) {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
 
@@ -606,6 +765,10 @@ io.on('connection', (socket) => {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
       return;
     }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
 
     if (room.phase !== 'LOBBY') {
       ack?.(err('ROOM_LOCKED', 'Game already started.'));
@@ -643,6 +806,28 @@ io.on('connection', (socket) => {
     ack?.(ok());
   });
 
+  socket.on('game.terminate', (payload: TerminatePayload, ack?: Ack) => {
+    const connection = socketIndex.get(socket.id);
+    if (!connection || connection.role !== 'host') {
+      ack?.(err('FORBIDDEN', 'Only the host can end the game.'));
+      return;
+    }
+
+    const room = rooms.get(connection.roomCode);
+    if (!room) {
+      ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has already been terminated.'));
+      return;
+    }
+
+    const reason = payload?.reason?.trim() || 'HOST_ENDED';
+    terminateRoom(room, reason);
+    ack?.(ok());
+  });
+
   socket.on('turn.place', (payload: PlacePayload, ack?: Ack) => {
     const connection = socketIndex.get(socket.id);
     if (!connection || connection.role !== 'player') {
@@ -653,6 +838,10 @@ io.on('connection', (socket) => {
     const room = rooms.get(connection.roomCode);
     if (!room) {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
 
@@ -704,6 +893,10 @@ io.on('connection', (socket) => {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
       return;
     }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
 
     if (room.phase !== 'PLACE') {
       ack?.(err('INVALID_PHASE', 'Not accepting removals right now.'));
@@ -745,6 +938,10 @@ io.on('connection', (socket) => {
     const room = rooms.get(connection.roomCode);
     if (!room) {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
 
@@ -793,6 +990,10 @@ io.on('connection', (socket) => {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
       return;
     }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
 
     const { playerId } = payload ?? {};
     if (!playerId) {
@@ -829,6 +1030,10 @@ io.on('connection', (socket) => {
     if (!room) {
       socketIndex.delete(socket.id);
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
 
@@ -870,6 +1075,10 @@ io.on('connection', (socket) => {
     const room = rooms.get(connection.roomCode);
     if (!room) {
       ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
 
