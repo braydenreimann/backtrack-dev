@@ -1,7 +1,8 @@
 import { forwardRef } from 'react';
 import type { CSSProperties } from 'react';
-import type { TimelineItem, TurnReveal } from './types';
+import type { TimelineItem, TurnReveal } from '@/lib/game-types';
 import TimelineCard from './TimelineCard';
+import { getTimelineCardColor } from '@/lib/timeline-colors';
 
 export type TimelineStripProps = {
   items: TimelineItem[];
@@ -20,7 +21,16 @@ const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
         {items.length === 0 ? (
           <div className="status">Timeline will appear here on the first turn.</div>
         ) : (
-          items.map((item) => <TimelineCard key={item.key} item={item} />)
+          items.map((item, index) => {
+            const color = getTimelineCardColor(index);
+            return (
+              <TimelineCard
+                key={item.key}
+                item={item}
+                accentColor={color.border ?? color.background}
+              />
+            );
+          })
         )}
       </div>
 

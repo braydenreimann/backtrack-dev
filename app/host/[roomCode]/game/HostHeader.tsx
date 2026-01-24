@@ -1,4 +1,4 @@
-import type { RoomPlayer } from './types';
+import type { RoomPlayer } from '@/lib/game-types';
 
 export type HostHeaderProps = {
   players: RoomPlayer[];

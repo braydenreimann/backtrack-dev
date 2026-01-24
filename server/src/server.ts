@@ -405,19 +405,13 @@ const handleTurnTimeout = (roomCode: string) => {
   if (!room.currentCard) {
     return;
   }
+  const activePlayer = ensureActivePlayer(room);
+  if (!activePlayer) {
+    return;
+  }
 
   if (room.tentativePlacementIndex === null) {
-    clearRoomTimers(room);
-    room.currentCard = null;
-    room.phase = 'REVEAL';
-    io.to(room.code).emit('turn.timeout', {
-      activePlayerId: room.turnOrder[room.activePlayerIndex] ?? null,
-      reason: 'NO_PLACEMENT',
-    });
-    bumpSeq(room);
-    emitSnapshot(room);
-    scheduleNextTurn(room, 500);
-    return;
+    room.tentativePlacementIndex = activePlayer.timeline.length;
   }
 
   resolveLock(room, 'TIMEOUT');
@@ -698,10 +692,10 @@ io.on('connection', (socket) => {
     ack?.(ok());
   });
 
-  socket.on('turn.lock', (_payload: unknown, ack?: Ack) => {
+  socket.on('turn.remove', (_payload: unknown, ack?: Ack) => {
     const connection = socketIndex.get(socket.id);
     if (!connection || connection.role !== 'player') {
-      ack?.(err('FORBIDDEN', 'Only players can lock.'));
+      ack?.(err('FORBIDDEN', 'Only players can remove placements.'));
       return;
     }
 
@@ -712,7 +706,7 @@ io.on('connection', (socket) => {
     }
 
     if (room.phase !== 'PLACE') {
-      ack?.(err('INVALID_PHASE', 'Not accepting locks right now.'));
+      ack?.(err('INVALID_PHASE', 'Not accepting removals right now.'));
       return;
     }
 
@@ -723,17 +717,68 @@ io.on('connection', (socket) => {
     }
 
     if (activePlayer.id !== connection.playerId) {
-      ack?.(err('NOT_ACTIVE_PLAYER', 'Only the active player can lock.'));
+      ack?.(err('NOT_ACTIVE_PLAYER', 'Only the active player can remove.'));
       return;
     }
 
     if (room.tentativePlacementIndex === null) {
-      ack?.(err('NO_PLACEMENT', 'Place the card before locking.'));
+      ack?.(ok());
+      return;
+    }
+
+    room.tentativePlacementIndex = null;
+    bumpSeq(room);
+    emitSnapshot(room);
+    io.to(room.code).emit('turn.removed', {
+      playerId: activePlayer.id,
+    });
+    ack?.(ok());
+  });
+
+  const handleReveal = (ack?: Ack) => {
+    const connection = socketIndex.get(socket.id);
+    if (!connection || connection.role !== 'player') {
+      ack?.(err('FORBIDDEN', 'Only players can reveal.'));
+      return;
+    }
+
+    const room = rooms.get(connection.roomCode);
+    if (!room) {
+      ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+
+    if (room.phase !== 'PLACE') {
+      ack?.(err('INVALID_PHASE', 'Not accepting reveals right now.'));
+      return;
+    }
+
+    const activePlayer = ensureActivePlayer(room);
+    if (!activePlayer) {
+      ack?.(err('PLAYER_NOT_FOUND', 'Active player not found.'));
+      return;
+    }
+
+    if (activePlayer.id !== connection.playerId) {
+      ack?.(err('NOT_ACTIVE_PLAYER', 'Only the active player can reveal.'));
+      return;
+    }
+
+    if (room.tentativePlacementIndex === null) {
+      ack?.(err('NO_PLACEMENT', 'Place the card before revealing.'));
       return;
     }
 
     resolveLock(room, 'LOCK');
     ack?.(ok());
+  };
+
+  socket.on('turn.lock', (_payload: unknown, ack?: Ack) => {
+    handleReveal(ack);
+  });
+
+  socket.on('turn.reveal', (_payload: unknown, ack?: Ack) => {
+    handleReveal(ack);
   });
 
   socket.on('kickPlayer', (payload: KickPayload, ack?: Ack<{ playerId: string }>) => {

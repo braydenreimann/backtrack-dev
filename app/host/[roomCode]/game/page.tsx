@@ -12,7 +12,7 @@ import TimelineStripAnimated from './TimelineStripAnimated';
 import TurnTimer from './TurnTimer';
 import AudioPreviewControls from './AudioPreviewControls';
 import HostStatusBanners from './HostStatusBanners';
-import type { Card, RoomPlayer, RoomSnapshot, TimelineItem, TurnReveal } from './types';
+import type { Card, RoomSnapshot, TimelineItem, TurnReveal } from '@/lib/game-types';
 
 type TurnDealtHost = {
   activePlayerId: string;
@@ -265,6 +265,10 @@ export default function HostGamePage() {
       setTentativePlacementIndex(payload.placementIndex);
     });
 
+    socket.on('turn.removed', () => {
+      setTentativePlacementIndex(null);
+    });
+
     socket.on('turn.reveal', (payload: TurnReveal) => {
       if (revealTimerRef.current !== null) {
         window.clearTimeout(revealTimerRef.current);
@@ -285,12 +289,6 @@ export default function HostGamePage() {
       setTentativePlacementIndex(null);
       setCurrentCard(payload.card);
       pendingRevealRef.current = payload;
-    });
-
-    socket.on('turn.timeout', () => {
-      setTentativePlacementIndex(null);
-      setCurrentCard(null);
-      clearRevealState();
     });
 
     socket.on('game.ended', (payload: { winnerId?: string; reason: string }) => {

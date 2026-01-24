@@ -6,24 +6,7 @@ import { createSocket } from '@/lib/socket';
 import { clearHostSession, getHostRoomCode, getHostSessionToken } from '@/lib/storage';
 import { getMockHostLobbyState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-
-type RoomPlayer = {
-  id: string;
-  name: string;
-  connected: boolean;
-  cardCount: number;
-};
-
-type RoomSnapshot = {
-  code: string;
-  seq: number;
-  phase: string;
-  activePlayerId: string | null;
-  turnNumber: number;
-  turnExpiresAt: number | null;
-  host: { connected: boolean };
-  players: RoomPlayer[];
-};
+import type { RoomSnapshot } from '@/lib/game-types';
 
 type AckOk = { ok: true } & Record<string, unknown>;
 

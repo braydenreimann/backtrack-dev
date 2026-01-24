@@ -29,6 +29,8 @@ type PlayRoomSnapshot = {
   seq: number;
   phase: RoomPhase;
   activePlayerId: string | null;
+  turnNumber: number;
+  host: { connected: boolean };
   turnExpiresAt: number | null;
   players: Array<{ id: string; name: string; connected: boolean; cardCount: number }>;
 };
@@ -104,6 +106,8 @@ const basePlayRoom: PlayRoomSnapshot = {
   seq: 12,
   phase: 'LOBBY',
   activePlayerId: null,
+  turnNumber: 1,
+  host: { connected: true },
   turnExpiresAt: null,
   players: basePlayers,
 };
