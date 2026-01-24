@@ -140,7 +140,6 @@ const timelineFull: Card[] = [
   { title: 'Hips Dont Lie', artist: 'Shakira', year: 2005 },
   { title: 'Bad Romance', artist: 'Lady Gaga', year: 2009 },
   { title: 'Rolling in the Deep', artist: 'Adele', year: 2010 },
-  { title: 'Royals', artist: 'Lorde', year: 2013 },
 ];
 
 const mockCurrentCard: Card = {

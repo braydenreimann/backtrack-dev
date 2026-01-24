@@ -36,8 +36,7 @@ body.player-game-locked {
 
 body {
   font-family: var(--font-body), "Space Grotesk", sans-serif;
-  background: radial-gradient(circle at top, rgba(245, 179, 1, 0.15), transparent 48%),
-    linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
+  background: linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
   color: var(--text);
 }
 
@@ -682,6 +681,8 @@ main {
 }
 
 .controller-shell {
+  --controller-timeline-offset: clamp(96px, 18vh, 160px);
+  --controller-timer-gap: 24px;
   position: fixed;
   inset: 0;
   width: 100%;
@@ -691,8 +692,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  background: radial-gradient(circle at top, rgba(245, 179, 1, 0.15), transparent 48%),
-    linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
+  background: linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
   color: var(--text);
   border: none;
   border-radius: 0;
@@ -714,6 +714,7 @@ main {
 }
 
 .controller-timer {
+  justify-self: center;
   padding: 8px 16px;
   border-radius: 999px;
   background: rgba(244, 242, 237, 0.12);
@@ -722,12 +723,17 @@ main {
   min-width: 68px;
   text-align: center;
   color: var(--text);
+  transform: translateY(12px);
 }
 
 .controller-timer.urgent {
   background: rgba(255, 92, 92, 0.2);
   border-color: rgba(255, 92, 92, 0.5);
   color: #ffd1d1;
+}
+
+.controller-shell.is-active .controller-timer {
+  transform: translateY(calc(var(--controller-timeline-offset) - var(--controller-timer-gap)));
 }
 
 .controller-status {
@@ -747,18 +753,57 @@ main {
 
 .controller-timeline-area {
   --controller-card-size: clamp(64px, 18vw, 88px);
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   background: rgba(12, 18, 30, 0.7);
   border: 1px solid var(--border);
   border-radius: 22px;
   min-height: calc(var(--controller-card-size) + var(--controller-card-size) + 32px);
+  margin-top: var(--controller-timeline-offset);
+  margin-bottom: clamp(36px, 8vh, 80px);
   padding: 16px 0;
 }
 
-.controller-strip {
+.controller-timeline-axis {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 50%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.controller-timeline-labels {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 10px;
   display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.controller-timeline-labels .timeline-label {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+}
+
+.controller-strip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
   gap: 12px;
   padding: 0 16px;
   overflow-x: auto;
+  height: 100%;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x;
@@ -837,12 +882,14 @@ main {
   display: grid;
   place-items: center;
   gap: 12px;
-  min-height: 170px;
+  min-height: 150px;
+  margin-top: auto;
+  margin-bottom: clamp(8px, 2vh, 16px);
 }
 
 .controller-hand-card {
-  width: clamp(120px, 44vw, 180px);
-  height: clamp(120px, 44vw, 180px);
+  width: clamp(108px, 38vw, 160px);
+  height: clamp(108px, 38vw, 160px);
   border-radius: 26px;
   background: linear-gradient(150deg, #f5b301, #e3a100);
   display: grid;
@@ -853,12 +900,6 @@ main {
   box-shadow: 0 16px 30px rgba(245, 179, 1, 0.3);
 }
 
-.controller-hand-label {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--muted);
-}
-
 .controller-hand-empty {
   padding: 18px 20px;
   border-radius: 18px;
@@ -866,6 +907,11 @@ main {
   background: rgba(12, 18, 30, 0.6);
   color: var(--muted);
   font-weight: 600;
+}
+
+.controller-hand-placeholder {
+  width: clamp(108px, 38vw, 160px);
+  height: clamp(108px, 38vw, 160px);
 }
 
 .controller-helper {
@@ -878,7 +924,7 @@ main {
   display: grid;
   place-items: center;
   min-height: 84px;
-  padding-bottom: 8px;
+  padding-bottom: 24px;
   margin-top: auto;
 }
 

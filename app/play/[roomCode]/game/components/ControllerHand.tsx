@@ -8,7 +8,7 @@ export default function ControllerHand({ placementIndex }: ControllerHandProps) 
   if (placementIndex !== null) {
     return (
       <div className="controller-hand">
-        <div className="controller-hand-empty">Mystery card placed</div>
+        <div className="controller-hand-placeholder" aria-hidden="true" />
       </div>
     );
   }
@@ -16,7 +16,6 @@ export default function ControllerHand({ placementIndex }: ControllerHandProps) 
   return (
     <div className="controller-hand">
       <div className="controller-hand-card">?</div>
-      <div className="controller-hand-label">Mystery card</div>
     </div>
   );
 }

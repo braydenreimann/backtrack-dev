@@ -331,16 +331,6 @@ export default function PlayerGamePage() {
     return room.players.find((player) => player.id === activePlayerId)?.name ?? null;
   }, [activePlayerId, room]);
 
-  const helperText = useMemo(() => {
-    if (helpDismissed || !isInteractive) {
-      return null;
-    }
-    if (placementIndex === null) {
-      return 'Tap where your card belongs in the timeline.';
-    }
-    return 'Tap another slot to move your card. Tap your card to remove it.';
-  }, [helpDismissed, isInteractive, placementIndex]);
-
   const placeAt = (index: number) => {
     if (!isInteractive) {
       return;
@@ -430,7 +420,7 @@ export default function PlayerGamePage() {
   }
 
   return (
-    <div className="controller-shell">
+    <div className="controller-shell is-active">
       <header className="controller-header">
         <div className="controller-wordmark">Backtrack</div>
         <div className={`controller-timer ${remainingSeconds !== null && remainingSeconds <= 5 ? 'urgent' : ''}`}>
@@ -450,8 +440,6 @@ export default function PlayerGamePage() {
       />
 
       <ControllerHand placementIndex={placementIndex} />
-
-      {helperText ? <div className="controller-helper">{helperText}</div> : null}
 
       <div className="controller-actions">
         <RevealButton

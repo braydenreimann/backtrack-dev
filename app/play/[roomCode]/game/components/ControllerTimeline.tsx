@@ -27,6 +27,7 @@ export default function ControllerTimeline({
   disabled = false,
 }: ControllerTimelineProps) {
   const stripRef = useRef<HTMLDivElement | null>(null);
+  const centeredSignatureRef = useRef<string | null>(null);
 
   const items = useMemo<TimelineRenderItem[]>(() => {
     const rows: TimelineRenderItem[] = [];
@@ -58,8 +59,30 @@ export default function ControllerTimeline({
     target.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [placementIndex, timeline.length]);
 
+  useEffect(() => {
+    if (placementIndex !== null || timeline.length === 0) {
+      return;
+    }
+    const signature = timeline.map((card) => `${card.year}-${card.title}`).join('|');
+    if (centeredSignatureRef.current === signature) {
+      return;
+    }
+    const root = stripRef.current;
+    if (!root) {
+      return;
+    }
+    const medianIndex = Math.floor((timeline.length - 1) / 2);
+    const target = root.querySelector<HTMLElement>(`[data-card-index="${medianIndex}"]`);
+    if (!target) {
+      return;
+    }
+    target.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    centeredSignatureRef.current = signature;
+  }, [placementIndex, timeline]);
+
   return (
     <div className="controller-timeline-area">
+      <div className="controller-timeline-axis" />
       <div className="controller-strip hide-scroll" ref={stripRef}>
         {items.map((item) => {
           if (item.type === 'card' && item.card) {
@@ -70,6 +93,7 @@ export default function ControllerTimeline({
                 type="button"
                 className="controller-card"
                 style={{ backgroundColor: color.background, color: color.text }}
+                data-card-index={item.slotIndex}
                 onClick={() => {
                   if (disabled) {
                     return;
@@ -125,6 +149,10 @@ export default function ControllerTimeline({
             </button>
           );
         })}
+      </div>
+      <div className="controller-timeline-labels">
+        <span className="timeline-label">Oldest</span>
+        <span className="timeline-label">Newest</span>
       </div>
     </div>
   );
