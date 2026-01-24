@@ -401,11 +401,12 @@ export default function PlayerGamePage() {
       <div className="controller-shell">
         <header className="controller-header">
           <div className="controller-wordmark">Backtrack</div>
+        </header>
+        <div className="controller-status-row">
           <div className={`controller-timer ${remainingSeconds !== null && remainingSeconds <= 5 ? 'urgent' : ''}`}>
             {formatTimer(remainingSeconds)}
           </div>
-          <div />
-        </header>
+        </div>
         {error ? <div className="controller-status bad">{error}</div> : null}
         {status ? <div className="controller-status">{status}</div> : null}
         <div className="controller-status">
@@ -420,26 +421,29 @@ export default function PlayerGamePage() {
   }
 
   return (
-    <div className="controller-shell is-active">
+    <div className="controller-shell">
       <header className="controller-header">
         <div className="controller-wordmark">Backtrack</div>
+      </header>
+      <div className="controller-status-row">
         <div className={`controller-timer ${remainingSeconds !== null && remainingSeconds <= 5 ? 'urgent' : ''}`}>
           {formatTimer(remainingSeconds)}
         </div>
-        <div />
-      </header>
+      </div>
 
       {error ? <div className="controller-status bad">{error}</div> : null}
 
-      <ControllerTimeline
-        timeline={timeline}
-        placementIndex={placementIndex}
-        onPlace={placeAt}
-        onRemove={removePlacement}
-        disabled={!isInteractive}
-      />
+      <div className="controller-body">
+        <ControllerTimeline
+          timeline={timeline}
+          placementIndex={placementIndex}
+          onPlace={placeAt}
+          onRemove={removePlacement}
+          disabled={!isInteractive}
+        />
 
-      <ControllerHand placementIndex={placementIndex} />
+        <ControllerHand placementIndex={placementIndex} />
+      </div>
 
       <div className="controller-actions">
         <RevealButton

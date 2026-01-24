@@ -27,7 +27,7 @@ const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
               <TimelineCard
                 key={item.key}
                 item={item}
-                accentColor={color.border ?? color.background}
+                color={color}
               />
             );
           })
