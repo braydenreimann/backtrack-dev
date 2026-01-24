@@ -750,6 +750,16 @@ io.on('connection', (socket) => {
 
     bumpSeq(room);
     emitSnapshot(room);
+    if (room.phase !== 'LOBBY' && room.currentCard) {
+      const activePlayer = ensureActivePlayer(room);
+      if (activePlayer && activePlayer.id === player.id) {
+        socket.emit('turn.dealt.player', {
+          activePlayerId: activePlayer.id,
+          turnNumber: room.turnNumber,
+          timeline: activePlayer.timeline,
+        });
+      }
+    }
     ack?.(ok({ roomCode: room.code, playerId: player.id }));
   });
 
