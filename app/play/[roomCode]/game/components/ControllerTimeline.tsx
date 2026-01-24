@@ -71,12 +71,12 @@ export default function ControllerTimeline({
                 className="controller-card"
                 style={{ backgroundColor: color.background, color: color.text }}
                 onClick={() => {
-                  if (disabled || placementIndex !== null) {
+                  if (disabled) {
                     return;
                   }
                   onPlace(item.slotIndex);
                 }}
-                aria-disabled={disabled || placementIndex !== null}
+                aria-disabled={disabled}
               >
                 <div>{item.card.year}</div>
                 <div className="controller-card-meta">
@@ -114,12 +114,12 @@ export default function ControllerTimeline({
               type="button"
               className="controller-card placeholder"
               onClick={() => {
-                if (disabled || placementIndex !== null) {
+                if (disabled) {
                   return;
                 }
                 onPlace(item.slotIndex);
               }}
-              aria-disabled={disabled || placementIndex !== null}
+              aria-disabled={disabled}
             >
               End
             </button>

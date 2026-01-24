@@ -21,12 +21,22 @@ const uiLinks = [
     ],
   },
   {
-    title: 'Player room',
-    description: 'Player view for active and passive turns.',
+    title: 'Player lobby',
+    description: 'Lobby states for the player view.',
     links: [
-      { label: 'Default', href: '/play/ABC123?mock=1' },
-      { label: 'Watch', href: '/play/ABC123?mock=1&state=watch' },
-      { label: 'Reveal', href: '/play/ABC123?mock=1&state=reveal' },
+      { label: 'Default', href: '/play/ABC123/lobby?mock=1' },
+    ],
+  },
+  {
+    title: 'Player game',
+    description: 'Active and passive turn states for the controller.',
+    links: [
+      { label: 'Default', href: '/play/ABC123/game?mock=1' },
+      { label: 'Active: 1 card', href: '/play/ABC123/game?mock=1&state=active-one' },
+      { label: 'Active: 5 cards', href: '/play/ABC123/game?mock=1&state=active-five' },
+      { label: 'Active: 10 cards', href: '/play/ABC123/game?mock=1&state=active-full' },
+      { label: 'Watch', href: '/play/ABC123/game?mock=1&state=watch' },
+      { label: 'Reveal', href: '/play/ABC123/game?mock=1&state=reveal' },
     ],
   },
 ];

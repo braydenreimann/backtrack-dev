@@ -23,6 +23,17 @@ body {
   min-height: 100%;
 }
 
+html {
+  background: var(--bg);
+}
+
+html.player-game-locked,
+body.player-game-locked {
+  overflow: hidden;
+  overscroll-behavior: none;
+  height: 100%;
+}
+
 body {
   font-family: var(--font-body), "Space Grotesk", sans-serif;
   background: radial-gradient(circle at top, rgba(245, 179, 1, 0.15), transparent 48%),
@@ -671,18 +682,22 @@ main {
 }
 
 .controller-shell {
-  width: min(520px, 100%);
-  min-height: 100vh;
-  margin: 0 auto;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   padding: 20px 18px 28px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  background: #f7f4ef;
-  color: #151515;
-  border-radius: 28px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
+  background: radial-gradient(circle at top, rgba(245, 179, 1, 0.15), transparent 48%),
+    linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
+  color: var(--text);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
 }
 
 .controller-header {
@@ -701,33 +716,41 @@ main {
 .controller-timer {
   padding: 8px 16px;
   border-radius: 999px;
-  background: #e3e0db;
+  background: rgba(244, 242, 237, 0.12);
+  border: 1px solid var(--border);
   font-weight: 600;
   min-width: 68px;
   text-align: center;
+  color: var(--text);
 }
 
 .controller-timer.urgent {
-  background: rgba(255, 146, 146, 0.8);
-  color: #6d1b1b;
+  background: rgba(255, 92, 92, 0.2);
+  border-color: rgba(255, 92, 92, 0.5);
+  color: #ffd1d1;
 }
 
 .controller-status {
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(15, 23, 42, 0.08);
-  color: #4b5563;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
   font-size: 0.95rem;
 }
 
 .controller-status.bad {
   background: rgba(255, 92, 92, 0.12);
-  color: #9b2c2c;
+  border-color: rgba(255, 92, 92, 0.4);
+  color: var(--danger);
 }
 
 .controller-timeline-area {
-  background: #e7e3dd;
+  --controller-card-size: clamp(64px, 18vw, 88px);
+  background: rgba(12, 18, 30, 0.7);
+  border: 1px solid var(--border);
   border-radius: 22px;
+  min-height: calc(var(--controller-card-size) + var(--controller-card-size) + 32px);
   padding: 16px 0;
 }
 
@@ -750,8 +773,8 @@ main {
 }
 
 .controller-card {
-  width: clamp(64px, 18vw, 88px);
-  height: clamp(64px, 18vw, 88px);
+  width: var(--controller-card-size, clamp(64px, 18vw, 88px));
+  height: var(--controller-card-size, clamp(64px, 18vw, 88px));
   border-radius: 18px;
   border: none;
   flex: 0 0 auto;
@@ -791,8 +814,8 @@ main {
 
 .controller-card.placeholder {
   background: transparent;
-  border: 2px dashed rgba(0, 0, 0, 0.25);
-  color: rgba(0, 0, 0, 0.4);
+  border: 2px dashed rgba(244, 242, 237, 0.35);
+  color: rgba(244, 242, 237, 0.6);
   font-size: 0.8rem;
   font-weight: 600;
 }
@@ -833,21 +856,22 @@ main {
 .controller-hand-label {
   font-size: 0.9rem;
   font-weight: 600;
-  color: rgba(17, 24, 39, 0.55);
+  color: var(--muted);
 }
 
 .controller-hand-empty {
   padding: 18px 20px;
   border-radius: 18px;
-  border: 1px dashed rgba(15, 23, 42, 0.2);
-  color: rgba(17, 24, 39, 0.55);
+  border: 1px dashed rgba(244, 242, 237, 0.35);
+  background: rgba(12, 18, 30, 0.6);
+  color: var(--muted);
   font-weight: 600;
 }
 
 .controller-helper {
   text-align: center;
   font-size: 0.9rem;
-  color: rgba(17, 24, 39, 0.6);
+  color: var(--muted);
 }
 
 .controller-actions {
@@ -886,16 +910,17 @@ main {
   border-radius: 14px;
   font-size: 0.9rem;
   text-align: center;
-  background: rgba(15, 23, 42, 0.08);
+  background: rgba(12, 18, 30, 0.75);
+  color: var(--text);
 }
 
 .controller-reveal-result.good {
-  color: #166534;
+  color: var(--success);
   background: rgba(22, 163, 74, 0.12);
 }
 
 .controller-reveal-result.bad {
-  color: #9f1239;
+  color: var(--danger);
   background: rgba(244, 63, 94, 0.12);
 }
 

@@ -86,6 +86,17 @@ export default function PlayerGamePage() {
   }, [isMock]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+    root.classList.add('player-game-locked');
+    body.classList.add('player-game-locked');
+    return () => {
+      root.classList.remove('player-game-locked');
+      body.classList.remove('player-game-locked');
+    };
+  }, []);
+
+  useEffect(() => {
     const storedId = getPlayerId();
     if (storedId) {
       setPlayerId(storedId);
@@ -327,7 +338,7 @@ export default function PlayerGamePage() {
     if (placementIndex === null) {
       return 'Tap where your card belongs in the timeline.';
     }
-    return 'Tap your card to remove it.';
+    return 'Tap another slot to move your card. Tap your card to remove it.';
   }, [helpDismissed, isInteractive, placementIndex]);
 
   const placeAt = (index: number) => {
@@ -429,7 +440,6 @@ export default function PlayerGamePage() {
       </header>
 
       {error ? <div className="controller-status bad">{error}</div> : null}
-      {status ? <div className="controller-status">{status}</div> : null}
 
       <ControllerTimeline
         timeline={timeline}

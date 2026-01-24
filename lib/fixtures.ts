@@ -140,6 +140,7 @@ const timelineFull: Card[] = [
   { title: 'Hips Dont Lie', artist: 'Shakira', year: 2005 },
   { title: 'Bad Romance', artist: 'Lady Gaga', year: 2009 },
   { title: 'Rolling in the Deep', artist: 'Adele', year: 2010 },
+  { title: 'Royals', artist: 'Lorde', year: 2013 },
 ];
 
 const mockCurrentCard: Card = {
@@ -264,12 +265,18 @@ export const getMockPlayRoomState = (state: string | null): MockPlayRoomState =>
   const key = normalizeState(state);
   const now = Date.now();
   const turnExpiresAt = now + 24_000;
+  const timelineOne = [timelineA[0]];
+  const timelineFive = timelineFull.slice(0, 5);
+  const buildPlayPlayers = (cardCount: number) =>
+    clonePlayers(basePlayers).map((player) =>
+      player.id === mockPlayerId ? { ...player, cardCount } : player
+    );
   const room: PlayRoomSnapshot = {
     ...basePlayRoom,
     phase: 'PLACE',
     activePlayerId: mockPlayerId,
     turnExpiresAt,
-    players: clonePlayers(basePlayers),
+    players: buildPlayPlayers(timelineA.length),
   };
 
   const baseState: MockPlayRoomState = {
@@ -295,6 +302,33 @@ export const getMockPlayRoomState = (state: string | null): MockPlayRoomState =>
     };
   }
 
+  if (key === 'active-one') {
+    return {
+      ...baseState,
+      room: { ...room, players: buildPlayPlayers(timelineOne.length) },
+      timeline: cloneCards(timelineOne),
+      placementIndex: null,
+    };
+  }
+
+  if (key === 'active-five') {
+    return {
+      ...baseState,
+      room: { ...room, players: buildPlayPlayers(timelineFive.length) },
+      timeline: cloneCards(timelineFive),
+      placementIndex: null,
+    };
+  }
+
+  if (key === 'active-full') {
+    return {
+      ...baseState,
+      room: { ...room, players: buildPlayPlayers(timelineFull.length) },
+      timeline: cloneCards(timelineFull),
+      placementIndex: null,
+    };
+  }
+
   if (key === 'reveal') {
     const revealTimeline = [
       { ...timelineA[0] },
@@ -304,7 +338,7 @@ export const getMockPlayRoomState = (state: string | null): MockPlayRoomState =>
     ];
     return {
       ...baseState,
-      room: { ...room, phase: 'REVEAL' },
+      room: { ...room, phase: 'REVEAL', players: buildPlayPlayers(revealTimeline.length) },
       reveal: {
         playerId: mockPlayerId,
         card: { ...mockCurrentCard },
