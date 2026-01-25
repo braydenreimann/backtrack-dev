@@ -75,6 +75,7 @@ export default function HostGamePage() {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const isPausedRef = useRef(false);
+  const wasFullscreenBeforePauseRef = useRef(false);
   const resumePreviewOnResumeRef = useRef(false);
   const lookupIdRef = useRef(0);
   const revealTimerRef = useRef<number | null>(null);
@@ -112,6 +113,8 @@ export default function HostGamePage() {
     isSupported: isFullscreenSupported,
     error: fullscreenError,
     toggleFullscreen,
+    enterFullscreen,
+    exitFullscreen,
     clearError: clearFullscreenError,
   } = useFullscreen(hostRef, { enableHotkeys: true });
 
@@ -578,6 +581,20 @@ export default function HostGamePage() {
       setError('Game is not in progress.');
       return;
     }
+
+    if (isPaused) {
+      if (wasFullscreenBeforePauseRef.current) {
+        void enterFullscreen();
+      }
+    } else {
+      if (isFullscreen) {
+        wasFullscreenBeforePauseRef.current = true;
+        void exitFullscreen();
+      } else {
+        wasFullscreenBeforePauseRef.current = false;
+      }
+    }
+
     const shouldResumePreview = isPaused && resumePreviewOnResumeRef.current;
     if (shouldResumePreview) {
       resumePreviewOnResumeRef.current = false;
@@ -826,8 +843,26 @@ export default function HostGamePage() {
       <HostStatusBanners status={status} error={error} />
 
       {isPaused ? (
-        <div className="game-pause-overlay" role="status" aria-live="polite">
-          <div className="game-pause-card">Game paused</div>
+        <div className="game-pause-overlay" role="dialog" aria-modal="true">
+          <h1 className="game-pause-title">Game Paused</h1>
+          <div className="game-pause-actions">
+            <button
+              type="button"
+              className="button game-pause-button"
+              onClick={togglePause}
+              disabled={pauseBusy}
+            >
+              Resume game
+            </button>
+            <button
+              type="button"
+              className="button secondary game-pause-button"
+              onClick={requestEndGame}
+              disabled={isEndGameDisabled}
+            >
+              End game
+            </button>
+          </div>
         </div>
       ) : null}
 

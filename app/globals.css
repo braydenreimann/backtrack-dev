@@ -55,7 +55,7 @@ main {
 }
 
 main:has(.host-game) {
-  padding-top: 0;
+  padding: 0;
   align-items: flex-start;
 }
 
@@ -350,7 +350,8 @@ main:has(.host-game) {
   width: 100%;
   display: grid;
   gap: 32px;
-  min-height: calc(100vh - 96px);
+  min-height: 100vh;
+  padding: 16px 20px;
   position: relative;
 }
 
@@ -470,28 +471,37 @@ main:has(.host-game) {
 .game-pause-overlay {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(6, 9, 14, 0.58);
-  backdrop-filter: blur(2px);
-  z-index: 12;
-  pointer-events: none;
-}
-
-.game-pause-overlay.blocking {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 48px;
+  background: var(--bg);
+  z-index: 20;
   pointer-events: auto;
 }
 
-.game-pause-card {
-  padding: 12px 22px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(12, 18, 30, 0.92);
-  color: var(--text);
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+.game-pause-title {
+  font-size: clamp(3rem, 10vw, 6rem);
+  font-weight: 800;
   text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--primary);
+  margin: 0;
+  text-align: center;
+  line-height: 1;
+}
+
+.game-pause-actions {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.game-pause-button {
+  min-width: 180px;
+  font-size: 1.1rem;
 }
 
 .host-score-chip {
