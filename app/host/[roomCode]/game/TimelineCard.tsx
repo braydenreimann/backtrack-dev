@@ -23,25 +23,27 @@ export default function TimelineCard({ item, color }: TimelineCardProps) {
       data-timeline-key={item.key}
       style={style}
     >
-      <div className="timeline-card-inner">
-        {/* Front of card (The Reveal) */}
-        <div className="timeline-card-face front">
-          <div className="timeline-card-front-content">
-            {item.card ? (
-              <>
-                <div className="timeline-card-year">{item.card.year}</div>
-                <div className="timeline-card-title">{item.card.title}</div>
-                <div className="timeline-card-artist">{item.card.artist}</div>
-              </>
-            ) : (
-              <div className="timeline-card-year">????</div>
-            )}
+      <div className="timeline-card-animator">
+        <div className="timeline-card-inner">
+          {/* Front of card (The Reveal) */}
+          <div className="timeline-card-face front">
+            <div className="timeline-card-front-content">
+              {item.card ? (
+                <>
+                  <div className="timeline-card-year">{item.card.year}</div>
+                  <div className="timeline-card-title">{item.card.title}</div>
+                  <div className="timeline-card-artist">{item.card.artist}</div>
+                </>
+              ) : (
+                <div className="timeline-card-year">????</div>
+              )}
+            </div>
           </div>
-        </div>
-        {/* Back of card (The Mystery) */}
-        <div className="timeline-card-face back">
-          <div className="timeline-card-mystery">?</div>
-          <div className="timeline-card-label">Mystery</div>
+          {/* Back of card (The Mystery) */}
+          <div className="timeline-card-face back">
+            <div className="timeline-card-mystery">?</div>
+            <div className="timeline-card-label">Mystery</div>
+          </div>
         </div>
       </div>
     </div>
