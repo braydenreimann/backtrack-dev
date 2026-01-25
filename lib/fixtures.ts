@@ -20,6 +20,8 @@ type HostRoomSnapshot = {
   activePlayerId: string | null;
   turnNumber: number;
   turnExpiresAt: number | null;
+  isPaused: boolean;
+  pausedTurnRemainingMs: number | null;
   host: { connected: boolean };
   players: RoomPlayer[];
 };
@@ -32,6 +34,8 @@ type PlayRoomSnapshot = {
   turnNumber: number;
   host: { connected: boolean };
   turnExpiresAt: number | null;
+  isPaused: boolean;
+  pausedTurnRemainingMs: number | null;
   players: Array<{ id: string; name: string; connected: boolean; cardCount: number }>;
 };
 
@@ -80,7 +84,7 @@ export type MockPlayRoomState = {
   reveal: TurnReveal | null;
 };
 
-export const mockRoomCode = 'ABC123';
+export const mockRoomCode = '123456';
 export const mockPlayerId = 'p1';
 export const mockPlayerName = 'Avery';
 
@@ -97,6 +101,8 @@ const baseHostRoom: HostRoomSnapshot = {
   activePlayerId: null,
   turnNumber: 1,
   turnExpiresAt: null,
+  isPaused: false,
+  pausedTurnRemainingMs: null,
   host: { connected: true },
   players: basePlayers,
 };
@@ -109,6 +115,8 @@ const basePlayRoom: PlayRoomSnapshot = {
   turnNumber: 1,
   host: { connected: true },
   turnExpiresAt: null,
+  isPaused: false,
+  pausedTurnRemainingMs: null,
   players: basePlayers,
 };
 

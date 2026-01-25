@@ -47,6 +47,10 @@ type RoomState = {
   turnExpiresAt: number | null;
   turnTimer: ReturnType<typeof setTimeout> | null;
   revealTimer: ReturnType<typeof setTimeout> | null;
+  revealExpiresAt: number | null;
+  isPaused: boolean;
+  pausedTurnRemainingMs: number | null;
+  pausedRevealRemainingMs: number | null;
 };
 
 type ConnectionIndex =
@@ -92,6 +96,14 @@ type TerminatePayload = {
   reason?: string;
 };
 
+type PausePayload = {
+  roomCode: string;
+};
+
+type ResumePayload = {
+  roomCode: string;
+};
+
 type TerminationRecord = {
   roomCode: string;
   reason: string;
@@ -104,6 +116,8 @@ const TURN_DURATION_MS = 40_000;
 const REVEAL_DURATION_MS = 3000;
 const WIN_CARD_COUNT = 10;
 const TERMINATION_TTL_MS = 10 * 60 * 1000;
+const GAME_PAUSE_EVENT = 'client:game.pause';
+const GAME_RESUME_EVENT = 'client:game.resume';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -148,7 +162,7 @@ const err = (code: string, message: string): AckErr => ({
   message,
 });
 
-const ROOM_CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const ROOM_CODE_CHARS = '0123456789';
 const ROOM_CODE_ATTEMPTS = 12;
 
 const nextRoomCode = (): string | null => {
@@ -237,6 +251,50 @@ const clearRoomTimers = (room: RoomState) => {
   room.turnTimer = null;
   room.revealTimer = null;
   room.turnExpiresAt = null;
+  room.revealExpiresAt = null;
+};
+
+const resetPauseState = (room: RoomState) => {
+  room.isPaused = false;
+  room.pausedTurnRemainingMs = null;
+  room.pausedRevealRemainingMs = null;
+};
+
+const pauseRoom = (room: RoomState) => {
+  if (room.isPaused) {
+    return;
+  }
+  const now = Date.now();
+  room.isPaused = true;
+  room.pausedTurnRemainingMs =
+    room.turnTimer && room.turnExpiresAt ? Math.max(0, room.turnExpiresAt - now) : null;
+  room.pausedRevealRemainingMs =
+    room.revealTimer && room.revealExpiresAt ? Math.max(0, room.revealExpiresAt - now) : null;
+  clearRoomTimers(room);
+  bumpSeq(room);
+  emitSnapshot(room);
+};
+
+const resumeRoom = (room: RoomState) => {
+  if (!room.isPaused) {
+    return;
+  }
+  const remainingTurnMs = room.pausedTurnRemainingMs;
+  const remainingRevealMs = room.pausedRevealRemainingMs;
+  resetPauseState(room);
+
+  if (remainingRevealMs !== null) {
+    scheduleNextTurn(room, remainingRevealMs);
+  } else if (remainingTurnMs !== null) {
+    const delayMs = Math.max(0, remainingTurnMs);
+    room.turnExpiresAt = Date.now() + delayMs;
+    room.turnTimer = setTimeout(() => {
+      handleTurnTimeout(room.code);
+    }, delayMs);
+  }
+
+  bumpSeq(room);
+  emitSnapshot(room);
 };
 
 const ensureActivePlayer = (room: RoomState): PlayerState | null => {
@@ -294,6 +352,8 @@ const serializeRoom = (room: RoomState) => ({
   activePlayerId: room.turnOrder[room.activePlayerIndex] ?? null,
   turnNumber: room.turnNumber,
   turnExpiresAt: room.turnExpiresAt,
+  isPaused: room.isPaused,
+  pausedTurnRemainingMs: room.isPaused ? room.pausedTurnRemainingMs : null,
   host: {
     connected: room.host.connected,
   },
@@ -347,6 +407,7 @@ const closeRoom = (room: RoomState, reason: string) => {
 
 const endGame = (room: RoomState, payload: { winnerId?: string; reason: string }) => {
   clearRoomTimers(room);
+  resetPauseState(room);
   room.phase = 'END';
   room.currentCard = null;
   room.tentativePlacementIndex = null;
@@ -364,6 +425,7 @@ const terminateRoom = (room: RoomState, reason: string) => {
   room.terminatedAt = terminatedAt;
   room.terminationReason = reason;
   clearRoomTimers(room);
+  resetPauseState(room);
   room.phase = 'END';
   room.currentCard = null;
   room.tentativePlacementIndex = null;
@@ -405,6 +467,7 @@ const scheduleNextTurn = (room: RoomState, delayMs: number) => {
   if (room.terminatedAt) {
     return;
   }
+  room.revealExpiresAt = Date.now() + delayMs;
   room.revealTimer = setTimeout(() => {
     if (room.terminatedAt) {
       return;
@@ -441,6 +504,9 @@ const emitTurnDealt = (room: RoomState, activePlayer: PlayerState, card: Card, e
 
 const resolveLock = (room: RoomState, reason: 'LOCK' | 'TIMEOUT') => {
   if (room.terminatedAt) {
+    return;
+  }
+  if (room.isPaused) {
     return;
   }
   const activePlayer = ensureActivePlayer(room);
@@ -490,6 +556,9 @@ const startTurn = (room: RoomState) => {
   if (room.terminatedAt) {
     return;
   }
+  if (room.isPaused) {
+    return;
+  }
   clearRoomTimers(room);
   const activePlayer = ensureActivePlayer(room);
   if (!activePlayer) {
@@ -527,6 +596,9 @@ const handleTurnTimeout = (roomCode: string) => {
     return;
   }
   if (room.terminatedAt) {
+    return;
+  }
+  if (room.isPaused) {
     return;
   }
   if (!room.currentCard) {
@@ -576,6 +648,10 @@ io.on('connection', (socket) => {
       turnExpiresAt: null,
       turnTimer: null,
       revealTimer: null,
+      revealExpiresAt: null,
+      isPaused: false,
+      pausedTurnRemainingMs: null,
+      pausedRevealRemainingMs: null,
     };
 
     rooms.set(roomCode, room);
@@ -800,6 +876,7 @@ io.on('connection', (socket) => {
     room.currentCard = null;
     room.tentativePlacementIndex = null;
     room.phase = 'DEAL';
+    resetPauseState(room);
 
     seedTimelines(room);
 
@@ -813,6 +890,80 @@ io.on('connection', (socket) => {
     });
 
     startTurn(room);
+    ack?.(ok());
+  });
+
+  socket.on(GAME_PAUSE_EVENT, (payload: PausePayload, ack?: Ack) => {
+    const connection = socketIndex.get(socket.id);
+    if (!connection || connection.role !== 'host') {
+      ack?.(err('FORBIDDEN', 'Only the host can pause the game.'));
+      return;
+    }
+
+    const { roomCode } = payload ?? {};
+    if (!roomCode) {
+      ack?.(err('INVALID_PAYLOAD', 'roomCode is required.'));
+      return;
+    }
+    if (roomCode !== connection.roomCode) {
+      ack?.(err('ROOM_MISMATCH', 'roomCode does not match host session.'));
+      return;
+    }
+
+    const room = rooms.get(connection.roomCode);
+    if (!room) {
+      ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
+    if (room.phase === 'LOBBY' || room.phase === 'END') {
+      ack?.(err('INVALID_PHASE', 'Game is not in progress.'));
+      return;
+    }
+    if (room.isPaused) {
+      ack?.(err('ALREADY_PAUSED', 'Game is already paused.'));
+      return;
+    }
+
+    pauseRoom(room);
+    ack?.(ok());
+  });
+
+  socket.on(GAME_RESUME_EVENT, (payload: ResumePayload, ack?: Ack) => {
+    const connection = socketIndex.get(socket.id);
+    if (!connection || connection.role !== 'host') {
+      ack?.(err('FORBIDDEN', 'Only the host can resume the game.'));
+      return;
+    }
+
+    const { roomCode } = payload ?? {};
+    if (!roomCode) {
+      ack?.(err('INVALID_PAYLOAD', 'roomCode is required.'));
+      return;
+    }
+    if (roomCode !== connection.roomCode) {
+      ack?.(err('ROOM_MISMATCH', 'roomCode does not match host session.'));
+      return;
+    }
+
+    const room = rooms.get(connection.roomCode);
+    if (!room) {
+      ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
+    if (!room.isPaused) {
+      ack?.(err('NOT_PAUSED', 'Game is not paused.'));
+      return;
+    }
+
+    resumeRoom(room);
     ack?.(ok());
   });
 
@@ -852,6 +1003,10 @@ io.on('connection', (socket) => {
     }
     if (room.terminatedAt) {
       ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
+    if (room.isPaused) {
+      ack?.(err('GAME_PAUSED', 'Game is paused.'));
       return;
     }
 
@@ -907,6 +1062,10 @@ io.on('connection', (socket) => {
       ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
       return;
     }
+    if (room.isPaused) {
+      ack?.(err('GAME_PAUSED', 'Game is paused.'));
+      return;
+    }
 
     if (room.phase !== 'PLACE') {
       ack?.(err('INVALID_PHASE', 'Not accepting removals right now.'));
@@ -952,6 +1111,10 @@ io.on('connection', (socket) => {
     }
     if (room.terminatedAt) {
       ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
+    if (room.isPaused) {
+      ack?.(err('GAME_PAUSED', 'Game is paused.'));
       return;
     }
 

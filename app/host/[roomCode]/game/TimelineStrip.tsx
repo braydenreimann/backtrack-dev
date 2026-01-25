@@ -2,7 +2,7 @@ import { forwardRef } from 'react';
 import type { CSSProperties } from 'react';
 import type { TimelineItem, TurnReveal } from '@/lib/game-types';
 import TimelineCard from './TimelineCard';
-import { getTimelineCardColor } from '@/lib/timeline-colors';
+import { getTimelineCardColor, TIMELINE_CARD_COLOR_COUNT } from '@/lib/timeline-colors';
 
 export type TimelineStripProps = {
   items: TimelineItem[];
@@ -12,6 +12,39 @@ export type TimelineStripProps = {
 
 const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
   ({ items, revealDisplay, style }, ref) => {
+    const colorSignature = (color: { background: string; text: string; border?: string }) =>
+      `${color.background}|${color.text}|${color.border ?? ''}`;
+
+    const resolveColor = (item: TimelineItem, index: number) => {
+      const baseColor = getTimelineCardColor(item.slotIndex);
+      if (!item.isCurrent || item.faceDown) {
+        return baseColor;
+      }
+
+      const neighborSignatures = new Set<string>();
+      const prevItem = items[index - 1];
+      const nextItem = items[index + 1];
+      if (prevItem) {
+        neighborSignatures.add(colorSignature(getTimelineCardColor(prevItem.slotIndex)));
+      }
+      if (nextItem) {
+        neighborSignatures.add(colorSignature(getTimelineCardColor(nextItem.slotIndex)));
+      }
+
+      if (!neighborSignatures.has(colorSignature(baseColor))) {
+        return baseColor;
+      }
+
+      for (let offset = 1; offset <= TIMELINE_CARD_COLOR_COUNT; offset += 1) {
+        const candidate = getTimelineCardColor(item.slotIndex + offset);
+        if (!neighborSignatures.has(colorSignature(candidate))) {
+          return candidate;
+        }
+      }
+
+      return baseColor;
+    };
+
     return (
       <section className="timeline-stage" ref={ref} style={style}>
       <div className="timeline-axis" />
@@ -22,7 +55,7 @@ const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
           <div className="status">Timeline will appear here on the first turn.</div>
         ) : (
           items.map((item, index) => {
-            const color = getTimelineCardColor(index);
+            const color = resolveColor(item, index);
             return (
               <TimelineCard
                 key={item.key}
@@ -34,14 +67,6 @@ const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
         )}
       </div>
 
-      {revealDisplay ? (
-        <div className={`host-reveal ${revealDisplay.correct ? 'good' : 'bad'}`}>
-          <span>{revealDisplay.correct ? 'Correct!' : 'Incorrect'}</span>
-          <span>
-            {revealDisplay.card.title} — {revealDisplay.card.artist} ({revealDisplay.card.year})
-          </span>
-        </div>
-      ) : null}
       </section>
     );
   }

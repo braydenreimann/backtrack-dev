@@ -13,6 +13,8 @@ type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
 
+const normalizeRoomCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
+
 function PlayLandingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,7 +52,7 @@ function PlayLandingPageContent() {
     }
 
     if (isMock) {
-      const trimmedRoom = roomCode.trim().toUpperCase() || 'ABC123';
+      const trimmedRoom = normalizeRoomCode(roomCode) || '123456';
       const trimmedName = name.trim() || 'Player';
       setPlayerSession('mock-session', 'mock-player', trimmedRoom, trimmedName);
       router.push(`/play/${trimmedRoom}${mockQuery}`);
@@ -83,7 +85,7 @@ function PlayLandingPageContent() {
     };
 
     socket.on('connect_error', handleConnectError);
-    const trimmedRoom = roomCode.trim().toUpperCase();
+    const trimmedRoom = normalizeRoomCode(roomCode);
     const trimmedName = name.trim();
 
     socket.emit('room.join', { roomCode: trimmedRoom, name: trimmedName }, (response: AckResponse) => {
@@ -130,10 +132,12 @@ function PlayLandingPageContent() {
               <input
                 className="input"
                 value={roomCode}
-                onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
-                placeholder="ABC123"
+                onChange={(event) => setRoomCode(normalizeRoomCode(event.target.value))}
+                placeholder="123456"
                 maxLength={6}
                 required
+                inputMode="numeric"
+                pattern="[0-9]*"
               />
             </label>
             <label>

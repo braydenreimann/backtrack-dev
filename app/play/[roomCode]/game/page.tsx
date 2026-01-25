@@ -75,6 +75,8 @@ export default function PlayerGamePage() {
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
   const [turnExpiresAt, setTurnExpiresAt] = useState<number | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [pausedTurnRemainingMs, setPausedTurnRemainingMs] = useState<number | null>(null);
   const [status, setStatus] = useState('Connecting to game...');
   const [error, setError] = useState<string | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -118,6 +120,8 @@ export default function PlayerGamePage() {
       setRevealBusy(false);
       setPlacementIndex(null);
       setTurnExpiresAt(null);
+      setIsPaused(false);
+      setPausedTurnRemainingMs(null);
       setRoom((prev) => (prev ? { ...prev, phase: 'END' } : prev));
       setError(null);
       setStatus('Game ended by host.');
@@ -191,6 +195,14 @@ export default function PlayerGamePage() {
   }, [handleTermination, isMock, roomCode]);
 
   useEffect(() => {
+    if (isPaused) {
+      if (pausedTurnRemainingMs === null) {
+        setRemainingSeconds(null);
+        return;
+      }
+      setRemainingSeconds(Math.max(0, Math.ceil(pausedTurnRemainingMs / 1000)));
+      return;
+    }
     if (!turnExpiresAt) {
       setRemainingSeconds(null);
       return;
@@ -204,7 +216,7 @@ export default function PlayerGamePage() {
     updateTimer();
     const interval = window.setInterval(updateTimer, 250);
     return () => window.clearInterval(interval);
-  }, [turnExpiresAt]);
+  }, [turnExpiresAt, isPaused, pausedTurnRemainingMs]);
 
   useEffect(() => {
     if (!roomCode || isPhone === null) {
@@ -237,6 +249,8 @@ export default function PlayerGamePage() {
       roomRef.current = updatedRoom;
       setActivePlayerId(activePlayerIdValue ?? null);
       setTurnExpiresAt(mock.turnExpiresAt);
+      setIsPaused(mock.room.isPaused ?? false);
+      setPausedTurnRemainingMs(mock.room.pausedTurnRemainingMs ?? null);
       setStatus(mock.status);
       setError(mock.error);
       setPlayerId(playerIdValue);
@@ -272,6 +286,8 @@ export default function PlayerGamePage() {
       setRoom(snapshot);
       setActivePlayerId(snapshot.activePlayerId ?? null);
       setTurnExpiresAt(snapshot.turnExpiresAt ?? null);
+      setIsPaused(snapshot.isPaused);
+      setPausedTurnRemainingMs(snapshot.pausedTurnRemainingMs ?? null);
       if (snapshot.phase === 'LOBBY') {
         router.replace(`/play/${roomCode}/lobby`);
       }
@@ -426,7 +442,13 @@ export default function PlayerGamePage() {
       room?.phase !== 'LOBBY' &&
       room?.phase !== 'END'
   );
-  const isInteractive = isActive && !reveal;
+  const isInteractive = isActive && !reveal && !isPaused;
+
+  const pauseOverlay = isPaused ? (
+    <div className="game-pause-overlay blocking" role="status" aria-live="polite">
+      <div className="game-pause-card">Game paused</div>
+    </div>
+  ) : null;
 
   const activePlayerName = useMemo(() => {
     if (!room || !activePlayerId) {
@@ -503,6 +525,7 @@ export default function PlayerGamePage() {
   if (!isActive) {
     return (
       <div className="controller-shell">
+        {pauseOverlay}
         <header className="controller-header">
           <div className="controller-wordmark">Backtrack</div>
         </header>
@@ -526,6 +549,7 @@ export default function PlayerGamePage() {
 
   return (
     <div className="controller-shell">
+      {pauseOverlay}
       <header className="controller-header">
         <div className="controller-wordmark">Backtrack</div>
       </header>

@@ -10,6 +10,9 @@ export type HostHeaderProps = {
   isFullscreenSupported: boolean;
   fullscreenError: string | null;
   onToggleFullscreen: () => void;
+  isPaused: boolean;
+  onTogglePause: () => void;
+  pauseDisabled: boolean;
   onRequestEndGame: () => void;
   endGameDisabled: boolean;
 };
@@ -39,6 +42,9 @@ export default function HostHeader({
   isFullscreenSupported,
   fullscreenError,
   onToggleFullscreen,
+  isPaused,
+  onTogglePause,
+  pauseDisabled,
   onRequestEndGame,
   endGameDisabled,
 }: HostHeaderProps) {
@@ -46,6 +52,7 @@ export default function HostHeader({
   const overflowMenuId = useId();
   const overflowRef = useRef<HTMLDivElement | null>(null);
   const fullscreenLabel = isFullscreen ? 'Exit full screen' : 'Full screen';
+  const pauseLabel = isPaused ? 'Resume game' : 'Pause game';
   const fullscreenTitle = fullscreenError
     ? fullscreenError
     : isFullscreenSupported
@@ -85,6 +92,11 @@ export default function HostHeader({
   const handleEndGame = () => {
     setIsOverflowOpen(false);
     onRequestEndGame();
+  };
+
+  const handlePause = () => {
+    setIsOverflowOpen(false);
+    onTogglePause();
   };
 
   return (
@@ -133,6 +145,15 @@ export default function HostHeader({
             </button>
             {isOverflowOpen ? (
               <div className="host-overflow-menu" role="menu" id={overflowMenuId}>
+                <button
+                  type="button"
+                  className="host-overflow-item"
+                  role="menuitem"
+                  onClick={handlePause}
+                  disabled={pauseDisabled}
+                >
+                  {pauseLabel}
+                </button>
                 <button
                   type="button"
                   className="host-overflow-item danger"

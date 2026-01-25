@@ -23,6 +23,8 @@ import HostStatusBanners from './HostStatusBanners';
 import {
   GAME_TERMINATE_EVENT,
   GAME_TERMINATED_EVENT,
+  GAME_PAUSE_EVENT,
+  GAME_RESUME_EVENT,
   type Card,
   type GameTerminationPayload,
   type RoomSnapshot,
@@ -72,6 +74,8 @@ export default function HostGamePage() {
   const roomRef = useRef<RoomSnapshot | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const isPausedRef = useRef(false);
+  const resumePreviewOnResumeRef = useRef(false);
   const lookupIdRef = useRef(0);
   const revealTimerRef = useRef<number | null>(null);
   const revealContentTimerRef = useRef<number | null>(null);
@@ -85,6 +89,8 @@ export default function HostGamePage() {
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
   const [turnExpiresAt, setTurnExpiresAt] = useState<number | null>(null);
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
+  const [isPaused, setIsPaused] = useState(false);
+  const [pausedTurnRemainingMs, setPausedTurnRemainingMs] = useState<number | null>(null);
   const [currentCard, setCurrentCard] = useState<Card | null>(null);
   const [timelines, setTimelines] = useState<Record<string, Card[]>>({});
   const [tentativePlacementIndex, setTentativePlacementIndex] = useState<number | null>(null);
@@ -99,6 +105,7 @@ export default function HostGamePage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   const [endGameBusy, setEndGameBusy] = useState(false);
+  const [pauseBusy, setPauseBusy] = useState(false);
 
   const {
     isFullscreen,
@@ -150,6 +157,14 @@ export default function HostGamePage() {
     }
   }, []);
 
+  const pausePreview = useCallback(() => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+    }
+    setIsPlaying(false);
+  }, []);
+
   const handleTermination = useCallback(
     (
       payload: { reason: string; terminatedAt: number },
@@ -177,8 +192,11 @@ export default function HostGamePage() {
       setTentativePlacementIndex(null);
       setTurnExpiresAt(null);
       setActivePlayerId(null);
+      setIsPaused(false);
+      setPausedTurnRemainingMs(null);
       setShowEndGameConfirm(false);
       setEndGameBusy(false);
+      setPauseBusy(false);
       setError(null);
       setStatus('Game ended by host.');
       socketRef.current?.disconnect();
@@ -239,7 +257,10 @@ export default function HostGamePage() {
     });
   };
 
-  const attemptPlay = async () => {
+  const attemptPlay = useCallback(async (options?: { ignorePaused?: boolean }) => {
+    if (isPaused && !options?.ignorePaused) {
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) {
       return;
@@ -251,9 +272,12 @@ export default function HostGamePage() {
     } catch {
       setPreviewState('blocked');
     }
-  };
+  }, [isPaused]);
 
   const togglePlay = () => {
+    if (isPaused) {
+      return;
+    }
     const audio = audioRef.current;
     if (!audio) {
       return;
@@ -292,6 +316,12 @@ export default function HostGamePage() {
       audio.src = preview;
       audio.currentTime = 0;
       audio.onended = () => setIsPlaying(false);
+      if (isPausedRef.current) {
+        resumePreviewOnResumeRef.current = true;
+        setIsPlaying(false);
+        setPreviewState('ready');
+        return;
+      }
       try {
         await audio.play();
         setIsPlaying(true);
@@ -309,6 +339,19 @@ export default function HostGamePage() {
   }, [stopPreview]);
 
   useEffect(() => {
+    if (isPaused) {
+      resumePreviewOnResumeRef.current = resumePreviewOnResumeRef.current || isPlaying;
+      pausePreview();
+      return;
+    }
+    resumePreviewOnResumeRef.current = false;
+  }, [isPaused, isPlaying, pausePreview]);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  useEffect(() => {
     if (!roomCode) {
       return;
     }
@@ -321,6 +364,8 @@ export default function HostGamePage() {
       setRoom({ ...mock.room, code: roomCode ?? mock.room.code });
       setActivePlayerId(mock.activePlayerId);
       setTurnExpiresAt(mock.turnExpiresAt);
+      setIsPaused(mock.room.isPaused ?? false);
+      setPausedTurnRemainingMs(mock.room.pausedTurnRemainingMs ?? null);
       setTimelines(mock.timelines);
       setCurrentCard(mock.currentCard);
       setTentativePlacementIndex(mock.tentativePlacementIndex);
@@ -352,9 +397,12 @@ export default function HostGamePage() {
 
     socket.on('room.snapshot', (snapshot: RoomSnapshot) => {
       roomRef.current = snapshot;
+      isPausedRef.current = snapshot.isPaused;
       setRoom(snapshot);
       setActivePlayerId(snapshot.activePlayerId ?? null);
       setTurnExpiresAt(snapshot.turnExpiresAt ?? null);
+      setIsPaused(snapshot.isPaused);
+      setPausedTurnRemainingMs(snapshot.pausedTurnRemainingMs ?? null);
       if (snapshot.phase === 'LOBBY') {
         setStatus('Lobby connected.');
       }
@@ -388,7 +436,9 @@ export default function HostGamePage() {
       setActivePlayerId(payload.activePlayerId);
       setTentativePlacementIndex(null);
       setStatus('');
-      void startPreview(payload.card);
+      if (!isPausedRef.current) {
+        void startPreview(payload.card);
+      }
     });
 
     socket.on('turn.placed', (payload: TurnPlaced) => {
@@ -501,6 +551,10 @@ export default function HostGamePage() {
   }, [isMock, room, roomCode, router]);
 
   useEffect(() => {
+    if (isPaused) {
+      setRemainingMs(pausedTurnRemainingMs);
+      return;
+    }
     if (!turnExpiresAt) {
       setRemainingMs(null);
       return;
@@ -514,7 +568,48 @@ export default function HostGamePage() {
     updateTimer();
     const interval = window.setInterval(updateTimer, 100);
     return () => window.clearInterval(interval);
-  }, [turnExpiresAt]);
+  }, [turnExpiresAt, isPaused, pausedTurnRemainingMs]);
+
+  const togglePause = () => {
+    if (pauseBusy || terminatedRef.current) {
+      return;
+    }
+    if (!room || room.phase === 'LOBBY' || room.phase === 'END') {
+      setError('Game is not in progress.');
+      return;
+    }
+    const shouldResumePreview = isPaused && resumePreviewOnResumeRef.current;
+    if (shouldResumePreview) {
+      resumePreviewOnResumeRef.current = false;
+      void attemptPlay({ ignorePaused: true });
+    }
+    if (isMock) {
+      const remaining = turnExpiresAt ? Math.max(0, turnExpiresAt - Date.now()) : null;
+      setIsPaused((prev) => !prev);
+      setPausedTurnRemainingMs(isPaused ? null : remaining);
+      return;
+    }
+    if (!roomCode) {
+      setError('Missing room code.');
+      return;
+    }
+    const socket = socketRef.current;
+    if (!socket) {
+      setError('Unable to reach the game server.');
+      return;
+    }
+    setPauseBusy(true);
+    const event = isPaused ? GAME_RESUME_EVENT : GAME_PAUSE_EVENT;
+    socket.emit(event, { roomCode }, (response: AckResponse) => {
+      if (!response.ok) {
+        setError(response.message ?? 'Unable to update pause state.');
+        if (shouldResumePreview) {
+          pausePreview();
+        }
+      }
+      setPauseBusy(false);
+    });
+  };
 
   useEffect(() => {
     if (isMock) {
@@ -611,7 +706,7 @@ export default function HostGamePage() {
       revealForActive?.placementIndex ?? (tentativePlacementIndex ?? null);
     const current = revealForActive?.card ?? currentCard;
     const showCurrent = current && placementIndex !== null;
-    const faceDown = !revealForActive;
+    const faceDown = !revealForActive || !revealContentVisible;
     const highlight = revealContentVisible
       ? revealForActive?.correct
         ? 'good'
@@ -642,6 +737,7 @@ export default function HostGamePage() {
         items.push({
           key: currentKey,
           card: current,
+          slotIndex: placementIndex,
           faceDown,
           isExiting,
           highlight,
@@ -651,6 +747,7 @@ export default function HostGamePage() {
       items.push({
         key: `${card.title}-${card.artist}-${card.year}`,
         card,
+        slotIndex: index,
         faceDown: false,
         isExiting: false,
         isCurrent: false,
@@ -661,6 +758,7 @@ export default function HostGamePage() {
       items.push({
         key: currentKey,
         card: current,
+        slotIndex: placementIndex,
         faceDown,
         isExiting,
         highlight,
@@ -689,6 +787,8 @@ export default function HostGamePage() {
       ? 0
       : Math.max(0, Math.min(100, (remainingMs / (TURN_DURATION_SECONDS * 1000)) * 100));
   const isEndGameDisabled = endGameBusy || terminatedRef.current;
+  const isPauseDisabled =
+    pauseBusy || terminatedRef.current || !room || room.phase === 'LOBBY' || room.phase === 'END';
 
   return (
     <div className={`host-game ${isFullscreen ? 'is-fullscreen' : ''}`} ref={hostRef}>
@@ -699,6 +799,9 @@ export default function HostGamePage() {
         isFullscreenSupported={isFullscreenSupported}
         fullscreenError={fullscreenError}
         onToggleFullscreen={toggleFullscreen}
+        isPaused={isPaused}
+        onTogglePause={togglePause}
+        pauseDisabled={isPauseDisabled}
         onRequestEndGame={requestEndGame}
         endGameDisabled={isEndGameDisabled}
       />
@@ -714,12 +817,19 @@ export default function HostGamePage() {
           previewState={previewState}
           previewUrl={previewUrl}
           isPlaying={isPlaying}
+          isPaused={isPaused}
           onAttemptPlay={attemptPlay}
           onTogglePlay={togglePlay}
         />
       </section>
 
       <HostStatusBanners status={status} error={error} />
+
+      {isPaused ? (
+        <div className="game-pause-overlay" role="status" aria-live="polite">
+          <div className="game-pause-card">Game paused</div>
+        </div>
+      ) : null}
 
       {showEndGameConfirm ? (
         <div className="host-modal" role="dialog" aria-modal="true" onClick={cancelEndGame}>

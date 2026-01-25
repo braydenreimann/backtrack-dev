@@ -2,6 +2,7 @@
   color-scheme: light;
   --bg: #0b0e13;
   --bg-accent: #111827;
+  --app-bg-gradient: linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
   --card: rgba(255, 255, 255, 0.08);
   --border: rgba(255, 255, 255, 0.16);
   --text: #f4f2ed;
@@ -36,7 +37,7 @@ body.player-game-locked {
 
 body {
   font-family: var(--font-body), "Space Grotesk", sans-serif;
-  background: linear-gradient(180deg, var(--bg) 0%, #0c111a 60%, #0b0e13 100%);
+  background: var(--app-bg-gradient);
   color: var(--text);
 }
 
@@ -350,10 +351,16 @@ main:has(.host-game) {
   display: grid;
   gap: 32px;
   min-height: calc(100vh - 96px);
+  position: relative;
 }
 
 .host-game.is-fullscreen {
   min-height: 100vh;
+  background: var(--app-bg-gradient);
+}
+
+.host-game:fullscreen::backdrop {
+  background: var(--app-bg-gradient);
 }
 
 .host-game-header {
@@ -458,6 +465,33 @@ main:has(.host-game) {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 6px;
+}
+
+.game-pause-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 9, 14, 0.58);
+  backdrop-filter: blur(2px);
+  z-index: 12;
+  pointer-events: none;
+}
+
+.game-pause-overlay.blocking {
+  pointer-events: auto;
+}
+
+.game-pause-card {
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(12, 18, 30, 0.92);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
 
 .host-score-chip {
@@ -691,6 +725,14 @@ main:has(.host-game) {
   transition: box-shadow 250ms ease, border-color 250ms ease;
 }
 
+.timeline-card-front-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+
 .timeline-card-face.back {
   transform: rotateY(180deg);
   background: linear-gradient(145deg, rgba(245, 179, 1, 0.9), rgba(197, 140, 0, 0.9));
@@ -809,29 +851,6 @@ main:has(.host-game) {
     transform: translateY(-24px);
     opacity: 0;
   }
-}
-
-.host-reveal {
-  margin: 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(12, 18, 30, 0.8);
-  color: var(--text);
-  font-weight: 600;
-}
-
-.host-reveal.good {
-  border-color: rgba(59, 208, 143, 0.6);
-  color: var(--success);
-}
-
-.host-reveal.bad {
-  border-color: rgba(255, 92, 92, 0.6);
-  color: var(--danger);
 }
 
 .controller-shell {

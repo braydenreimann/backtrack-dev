@@ -18,6 +18,8 @@ export type RoomSnapshot = {
   activePlayerId: string | null;
   turnNumber: number;
   turnExpiresAt: number | null;
+  isPaused: boolean;
+  pausedTurnRemainingMs: number | null;
   host: { connected: boolean };
   players: RoomPlayer[];
 };
@@ -34,6 +36,7 @@ export type TurnReveal = {
 export type TimelineItem = {
   key: string;
   card: Card | null;
+  slotIndex: number;
   faceDown: boolean;
   isExiting: boolean;
   highlight?: 'good' | 'bad';
@@ -42,9 +45,19 @@ export type TimelineItem = {
 
 export const GAME_TERMINATED_EVENT = 'game.terminated';
 export const GAME_TERMINATE_EVENT = 'game.terminate';
+export const GAME_PAUSE_EVENT = 'client:game.pause';
+export const GAME_RESUME_EVENT = 'client:game.resume';
 
 export type GameTerminationPayload = {
   roomCode: string;
   reason: string;
   terminatedAt: number;
+};
+
+export type GamePausePayload = {
+  roomCode: string;
+};
+
+export type GameResumePayload = {
+  roomCode: string;
 };

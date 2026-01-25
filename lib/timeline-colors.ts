@@ -13,6 +13,8 @@ const TIMELINE_CARD_COLORS: TimelineCardColor[] = [
   { background: '#0ea5a4', text: '#ffffff' },
 ];
 
+export const TIMELINE_CARD_COLOR_COUNT = TIMELINE_CARD_COLORS.length;
+
 export const getTimelineCardColor = (index: number): TimelineCardColor => {
   const safeIndex = Number.isFinite(index) ? Math.abs(index) : 0;
   return TIMELINE_CARD_COLORS[safeIndex % TIMELINE_CARD_COLORS.length];
