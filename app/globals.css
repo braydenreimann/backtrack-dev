@@ -353,7 +353,7 @@ main:has(.host-game) {
   justify-content: space-between;
   gap: 16px;
   min-height: 100vh;
-  padding: calc(10px + env(safe-area-inset-top)) 20px calc(10px + env(safe-area-inset-bottom));
+  padding: calc(20px + env(safe-area-inset-top)) 20px calc(10px + env(safe-area-inset-bottom));
   position: relative;
 }
 
