@@ -861,8 +861,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (room.players.length < 2) {
-      ack?.(err('NOT_ENOUGH_PLAYERS', 'At least 2 players are required.'));
+    if (room.players.length < 1) {
+      // Revert to 2 players for production. Set to 1 for testing.
+      ack?.(err('NOT_ENOUGH_PLAYERS', 'At least 1 player is required.'));
       return;
     }
 

@@ -47,26 +47,27 @@ const TimelineStrip = forwardRef<HTMLElement, TimelineStripProps>(
 
     return (
       <section className="timeline-stage" ref={ref} style={style}>
-      <div className="timeline-axis" />
-      <div className="timeline-label left">Oldest</div>
-      <div className="timeline-label right">Newest</div>
-      <div className="timeline-strip hide-scroll">
-        {items.length === 0 ? (
-          <div className="status">Timeline will appear here on the first turn.</div>
-        ) : (
-          items.map((item, index) => {
-            const color = resolveColor(item, index);
-            return (
-              <TimelineCard
-                key={item.key}
-                item={item}
-                color={color}
-              />
-            );
-          })
-        )}
-      </div>
-
+        <div className="timeline-track-wrapper">
+          <div className="timeline-axis" />
+          <div className="timeline-label left">Oldest</div>
+          <div className="timeline-label right">Newest</div>
+          <div className="timeline-strip hide-scroll">
+            {items.length === 0 ? (
+              <div className="status">Timeline will appear here on the first turn.</div>
+            ) : (
+              items.map((item, index) => {
+                const color = resolveColor(item, index);
+                return (
+                  <TimelineCard
+                    key={item.key}
+                    item={item}
+                    color={color}
+                  />
+                );
+              })
+            )}
+          </div>
+        </div>
       </section>
     );
   }
