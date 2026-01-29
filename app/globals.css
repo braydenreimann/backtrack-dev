@@ -55,8 +55,8 @@ main {
 }
 
 main:has(.host-game) {
-  padding: 0;
-  align-items: flex-start;
+  padding: 0 !important;
+  align-items: flex-start !important;
 }
 
 .container {
@@ -348,11 +348,21 @@ main:has(.host-game) {
 
 .host-game {
   width: 100%;
-  display: grid;
-  gap: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
   min-height: 100vh;
-  padding: 16px 20px;
+  padding: calc(10px + env(safe-area-inset-top)) 20px calc(10px + env(safe-area-inset-bottom));
   position: relative;
+}
+
+.host-game-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
 }
 
 .host-game.is-fullscreen {
@@ -409,6 +419,7 @@ main:has(.host-game) {
   font-size: clamp(2.2rem, 3.4vw, 3.2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1;
 }
 
 .host-deck {
@@ -1219,8 +1230,8 @@ main:has(.host-game) {
   }
 
   main:has(.host-game) {
-    padding-top: 0;
-    align-items: flex-start;
+    padding: 0 !important;
+    align-items: flex-start !important;
   }
 
   .card {

@@ -823,9 +823,11 @@ export default function HostGamePage() {
         endGameDisabled={isEndGameDisabled}
       />
 
-      <HostTurnBanner roundNumber={roundNumber} activePlayerName={activePlayer?.name ?? null} />
+      <div className="host-game-content">
+        <HostTurnBanner roundNumber={roundNumber} activePlayerName={activePlayer?.name ?? null} />
 
-      <TimelineStripAnimated items={timelineItems} revealDisplay={revealDisplay} />
+        <TimelineStripAnimated items={timelineItems} revealDisplay={revealDisplay} />
+      </div>
 
       <section className="host-timer">
         <TurnTimer remainingSeconds={remainingSeconds} progressPct={progressPct} />
