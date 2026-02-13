@@ -1294,7 +1294,58 @@ io.on('connection', (socket) => {
   });
 });
 
-const port = Number(process.env.PORT ?? 3001);
-httpServer.listen(port, () => {
-  console.log(`Socket.IO server listening on http://localhost:${port}`);
-});
+const defaultPort = Number(process.env.PORT ?? 3001);
+
+export const startServer = (port: number = defaultPort): Promise<number> =>
+  new Promise((resolve, reject) => {
+    if (httpServer.listening) {
+      const address = httpServer.address();
+      const activePort = typeof address === 'object' && address ? address.port : port;
+      resolve(activePort);
+      return;
+    }
+
+    const onError = (error: Error) => {
+      httpServer.off('listening', onListening);
+      reject(error);
+    };
+
+    const onListening = () => {
+      httpServer.off('error', onError);
+      const address = httpServer.address();
+      const activePort = typeof address === 'object' && address ? address.port : port;
+      resolve(activePort);
+    };
+
+    httpServer.once('error', onError);
+    httpServer.once('listening', onListening);
+    httpServer.listen(port);
+  });
+
+export const stopServer = (): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (!httpServer.listening) {
+      resolve();
+      return;
+    }
+
+    io.close();
+    httpServer.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
+
+if (process.env.NODE_ENV !== 'test') {
+  startServer()
+    .then((port) => {
+      console.log(`Socket.IO server listening on http://localhost:${port}`);
+    })
+    .catch((error) => {
+      console.error('Failed to start Socket.IO server.', error);
+      process.exitCode = 1;
+    });
+}
