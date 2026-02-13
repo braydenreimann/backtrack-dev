@@ -2,7 +2,7 @@
 
 import { FormEvent, Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createSocket } from '@/lib/socket';
+import { createSocket, getSocketUrl } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
 import { getPlayerRoomCode, getPlayerSessionToken, setPlayerSession } from '@/lib/storage';
 import { getMockConfig } from '@/lib/mock';
@@ -62,13 +62,14 @@ function PlayLandingPageContent() {
     setLoading(true);
     setError(null);
     const socket = createSocket();
+    const socketUrl = getSocketUrl();
     let settled = false;
     const joinTimeout = window.setTimeout(() => {
       if (settled) {
         return;
       }
       settled = true;
-      setError('Unable to reach the game server. Check Wi-Fi and server IP.');
+      setError(`Unable to reach the game server at ${socketUrl}. Check Wi-Fi and server IP.`);
       socket.disconnect();
       setLoading(false);
     }, 7000);
@@ -79,7 +80,7 @@ function PlayLandingPageContent() {
       }
       settled = true;
       window.clearTimeout(joinTimeout);
-      setError('Unable to reach the game server. Check Wi-Fi and server IP.');
+      setError(`Unable to reach the game server at ${socketUrl}. Check Wi-Fi and server IP.`);
       socket.disconnect();
       setLoading(false);
     };
