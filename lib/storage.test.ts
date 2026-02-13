@@ -51,6 +51,22 @@ describe('room termination storage', () => {
     expect(consumeRoomTermination(ROOM_CODE)).toBeNull();
     vi.useRealTimers();
   });
+
+  it('treats malformed termination payloads as invalid and clears them', () => {
+    resetStorage();
+    localStorage.setItem(
+      TERMINATION_KEY,
+      JSON.stringify({
+        roomCode: ROOM_CODE,
+        reason: 'HOST_ENDED',
+        terminatedAt: Date.now(),
+      })
+    );
+
+    expect(consumeRoomTermination(ROOM_CODE)).toBeNull();
+    expect(localStorage.getItem(TERMINATION_KEY)).toBeNull();
+    expect(sessionStorage.getItem(TERMINATION_KEY)).toBeNull();
+  });
 });
 
 describe('clearRoomStorage', () => {

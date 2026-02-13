@@ -15,6 +15,21 @@ export type RoomTerminationRecord = {
   expiresAt: number;
 };
 
+const isValidTerminationRecord = (value: unknown): value is RoomTerminationRecord => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const candidate = value as Partial<RoomTerminationRecord>;
+  return (
+    typeof candidate.roomCode === 'string' &&
+    typeof candidate.reason === 'string' &&
+    typeof candidate.terminatedAt === 'number' &&
+    Number.isFinite(candidate.terminatedAt) &&
+    typeof candidate.expiresAt === 'number' &&
+    Number.isFinite(candidate.expiresAt)
+  );
+};
+
 const safeLocalStorage = () => (typeof window === 'undefined' ? null : window.localStorage);
 const safeSessionStorage = () => (typeof window === 'undefined' ? null : window.sessionStorage);
 
@@ -30,8 +45,8 @@ const readTerminationRecord = (roomCode: string) => {
     return null;
   }
   try {
-    const parsed = JSON.parse(raw) as RoomTerminationRecord;
-    if (!parsed || parsed.expiresAt <= Date.now()) {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isValidTerminationRecord(parsed) || parsed.expiresAt <= Date.now()) {
       safeLocalStorage()?.removeItem(key);
       safeSessionStorage()?.removeItem(key);
       return null;
