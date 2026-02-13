@@ -1,4 +1,4 @@
-import { ViewportGate } from '@/app/components/ViewportGate';
+import { ViewportGate } from '@/app/host/ViewportGate';
 
 export default function HostLayout({
   children,

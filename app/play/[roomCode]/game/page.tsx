@@ -24,9 +24,9 @@ import {
   type RoomSnapshot,
   type TurnReveal,
 } from '@/lib/game-types';
-import ControllerTimeline from './components/ControllerTimeline';
-import ControllerHand from './components/ControllerHand';
-import RevealButton from './components/RevealButton';
+import ControllerTimeline from './ControllerTimeline';
+import ControllerHand from './ControllerHand';
+import RevealButton from './RevealButton';
 
 type TurnDealtPlayer = {
   activePlayerId: string;
@@ -437,10 +437,10 @@ export default function PlayerGamePage() {
 
   const isActive = Boolean(
     playerId &&
-      activePlayerId &&
-      playerId === activePlayerId &&
-      room?.phase !== 'LOBBY' &&
-      room?.phase !== 'END'
+    activePlayerId &&
+    playerId === activePlayerId &&
+    room?.phase !== 'LOBBY' &&
+    room?.phase !== 'END'
   );
   const isInteractive = isActive && !reveal && !isPaused;
 

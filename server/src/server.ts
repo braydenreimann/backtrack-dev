@@ -122,7 +122,7 @@ const GAME_RESUME_EVENT = 'client:game.resume';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const baseDeck: Card[] = JSON.parse(
-  readFileSync(resolve(__dirname, '../../cards.json'), 'utf-8')
+  readFileSync(resolve(__dirname, '../data/cards.json'), 'utf-8')
 ) as Card[];
 
 const normalizeUserAgent = (userAgent: string | string[] | undefined): string => {

@@ -149,7 +149,7 @@ Backtrack is a **TV-first** party game. The shared host screen is the primary ga
 
 ## Seed Deck Format
 
-- Deck is a **static JSON file** (`cards.json`).
+- Deck is a **static JSON file** (`server/data/cards.json`).
 - No external IDs are required.
 
 ### Card schema
