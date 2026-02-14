@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import type { Card } from '@/lib/game-types';
+import type { Card } from '@/lib/contracts/game';
 import { getTimelineCardColor } from '@/lib/timeline-colors';
 
 type TimelineRenderItem = {

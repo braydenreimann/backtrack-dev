@@ -1,27 +1,28 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
+import type { RoomSnapshot } from '@/lib/contracts/game';
 import {
-  clearHostSession,
-  clearRoomStorage,
-  consumeRoomTermination,
-  getHostRoomCode,
-  getHostSessionToken,
-  markRoomTerminated,
-} from '@/lib/storage';
+  ACK_ERROR_CODES,
+  CLIENT_TO_SERVER_EVENTS,
+  SERVER_TO_CLIENT_EVENTS,
+  type AckResponse,
+  type GameTerminationPayload,
+  type HostResumeAck,
+  type KickPlayerAck,
+  type RoomClosedPayload,
+} from '@/lib/contracts/socket';
+import {
+  clearRoomSessionForRole,
+  clearSessionForRole,
+  getSessionRoomCodeForRole,
+  getSessionTokenForRole,
+} from '@/lib/realtime/session-role';
+import { useRoomTermination } from '@/lib/realtime/useRoomTermination';
 import { getMockHostLobbyState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-import { GAME_TERMINATED_EVENT, type GameTerminationPayload, type RoomSnapshot } from '@/lib/game-types';
-
-type AckOk = { ok: true } & Record<string, unknown>;
-
-type AckErr = { ok: false; code: string; message: string };
-
-type AckResponse = AckOk | AckErr;
-
-const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 export default function HostLobbyPage() {
   const params = useParams();
@@ -30,8 +31,6 @@ export default function HostLobbyPage() {
   const { isMock, mockState, mockQuery } = getMockConfig(searchParams);
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
-  const terminationTimeoutRef = useRef<number | null>(null);
-  const terminatedRef = useRef(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState<string>('Connecting to lobby...');
   const [error, setError] = useState<string | null>(null);
@@ -39,43 +38,19 @@ export default function HostLobbyPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
 
-  const handleTermination = useCallback(
-    (payload: { reason: string; terminatedAt: number }, options?: { persistMarker?: boolean }) => {
-      if (terminatedRef.current) {
-        return;
-      }
-      if (roomCode) {
-        if (options?.persistMarker !== false) {
-          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
-        }
-        clearRoomStorage(roomCode);
-      } else {
-        clearHostSession();
-      }
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-        terminationTimeoutRef.current = null;
-      }
-      terminatedRef.current = true;
-      setError(null);
-      setStatus('Game ended by host.');
+  const { handleTermination, terminatedRef } = useRoomTermination({
+    role: 'host',
+    roomCode,
+    isMock,
+    onTerminateNow: () => {
       socketRef.current?.disconnect();
-      terminationTimeoutRef.current = window.setTimeout(() => {
-        router.replace('/host');
-      }, TERMINATION_REDIRECT_DELAY_MS);
     },
-    [roomCode, router]
-  );
-
-  useEffect(() => {
-    if (!roomCode || isMock) {
-      return;
-    }
-    const record = consumeRoomTermination(roomCode);
-    if (record) {
-      handleTermination(record, { persistMarker: false });
-    }
-  }, [handleTermination, isMock, roomCode]);
+    onRedirect: () => {
+      router.replace('/host');
+    },
+    onStatus: setStatus,
+    onClearError: () => setError(null),
+  });
 
   useEffect(() => {
     if (!roomCode) {
@@ -93,13 +68,13 @@ export default function HostLobbyPage() {
       return;
     }
 
-    const hostSessionToken = getHostSessionToken();
+    const hostSessionToken = getSessionTokenForRole('host');
     if (!hostSessionToken) {
       setError('Missing host session. Return to /host to create a room.');
       return;
     }
 
-    const storedRoom = getHostRoomCode();
+    const storedRoom = getSessionRoomCodeForRole('host');
     if (storedRoom && storedRoom !== roomCode) {
       setStatus('Session room mismatch. Attempting to resume anyway.');
     }
@@ -107,62 +82,58 @@ export default function HostLobbyPage() {
     const socket = createSocket();
     socketRef.current = socket;
 
-    socket.on('room.snapshot', (snapshot: RoomSnapshot) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_SNAPSHOT, (snapshot: RoomSnapshot) => {
       setRoom(snapshot);
       if (snapshot.phase === 'LOBBY') {
         setStatus('Lobby connected.');
       }
     });
 
-    socket.on('game.started', () => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_STARTED, () => {
       router.replace(`/host/${roomCode}/game`);
     });
 
-    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_TERMINATED, (payload: GameTerminationPayload) => {
       handleTermination(payload);
     });
 
-    socket.on('room.closed', (payload: { reason: string }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_CLOSED, (payload: RoomClosedPayload) => {
       if (terminatedRef.current) {
         return;
       }
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
-      if (roomCode) {
-        clearRoomStorage(roomCode);
-      } else {
-        clearHostSession();
-      }
+      clearRoomSessionForRole('host', roomCode);
       router.replace('/host');
     });
 
-    socket.emit('host.resume', { hostSessionToken }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.HOST_RESUME,
+      { hostSessionToken },
+      (response: AckResponse<HostResumeAck>) => {
       if (response.ok) {
         return;
       }
-      if (response.code === 'ROOM_TERMINATED') {
+      if (response.code === ACK_ERROR_CODES.ROOM_TERMINATED) {
         handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
         return;
       }
-      if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearHostSession();
-        }
+      if (
+        response.code === ACK_ERROR_CODES.SESSION_NOT_FOUND ||
+        response.code === ACK_ERROR_CODES.ROOM_NOT_FOUND
+      ) {
+        clearRoomSessionForRole('host', roomCode);
         setError('Host session expired. Create a new room.');
         router.replace('/host');
         return;
       }
       setError(response.message ?? 'Unable to resume host session.');
-    });
+      }
+    );
 
     return () => {
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-      }
       socket.disconnect();
     };
-  }, [handleTermination, isMock, mockState, roomCode, router]);
+  }, [handleTermination, isMock, mockState, roomCode, router, terminatedRef]);
 
   useEffect(() => {
     if (isMock) {
@@ -180,12 +151,16 @@ export default function HostLobbyPage() {
       return;
     }
     setKickBusy(playerId);
-    socket.emit('kickPlayer', { playerId }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.PLAYER_KICK,
+      { playerId },
+      (response: AckResponse<KickPlayerAck>) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to kick player.');
       }
       setKickBusy(null);
-    });
+      }
+    );
   };
 
   const deleteRoom = () => {
@@ -205,9 +180,9 @@ export default function HostLobbyPage() {
       return;
     }
     setDeleteBusy(true);
-    socket.emit('room.delete', {}, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.ROOM_DELETE, {}, (response: AckResponse) => {
       if (response.ok) {
-        clearHostSession();
+        clearSessionForRole('host');
         router.replace('/host');
         return;
       }
@@ -226,7 +201,7 @@ export default function HostLobbyPage() {
       return;
     }
     setStartBusy(true);
-    socket.emit('game.start', {}, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.GAME_START, {}, (response: AckResponse) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to start game.');
         setStartBusy(false);

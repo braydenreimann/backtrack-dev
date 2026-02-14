@@ -6,7 +6,10 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:contracts": "node scripts/check-contract-drift.mjs",
+    "check:docs": "node scripts/check-doc-boundary.mjs",
+    "verify": "npm run check:contracts && npm run check:docs && npm run lint && npm run test && npm run build && npm --prefix server run build"
   },
   "dependencies": {
     "next": "^14.2.35",

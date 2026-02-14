@@ -4,13 +4,12 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { getHostRoomCode, getHostSessionToken, setHostSession } from '@/lib/storage';
+import {
+  CLIENT_TO_SERVER_EVENTS,
+  type AckResponse,
+  type RoomCreateAck,
+} from '@/lib/contracts/socket';
 import { getMockConfig } from '@/lib/mock';
-
-type AckOk = { ok: true } & Record<string, unknown>;
-
-type AckErr = { ok: false; code: string; message: string };
-
-type AckResponse = AckOk | AckErr;
 
 function HostLandingPageContent() {
   const router = useRouter();
@@ -32,10 +31,10 @@ function HostLandingPageContent() {
     setLoading(true);
     setError(null);
     const socket = createSocket();
-    socket.emit('room.create', {}, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.ROOM_CREATE, {}, (response: AckResponse<RoomCreateAck>) => {
       if (response.ok) {
-        const roomCode = response.roomCode as string;
-        const hostSessionToken = response.hostSessionToken as string;
+        const roomCode = response.roomCode;
+        const hostSessionToken = response.hostSessionToken;
         setHostSession(hostSessionToken, roomCode);
         socket.disconnect();
         router.push(`/host/${roomCode}/lobby`);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, useState } from 'react';
-import type { RoomPlayer } from '@/lib/game-types';
+import type { RoomPlayer } from '@/lib/contracts/game';
 
 export type HostHeaderProps = {
   players: RoomPlayer[];

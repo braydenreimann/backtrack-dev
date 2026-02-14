@@ -1,6 +1,6 @@
 import { forwardRef } from 'react';
 import type { CSSProperties } from 'react';
-import type { TimelineItem, TurnReveal } from '@/lib/game-types';
+import type { TimelineItem, TurnReveal } from '@/lib/contracts/game';
 import TimelineCard from './TimelineCard';
 import { getTimelineCardColor, TIMELINE_CARD_COLOR_COUNT } from '@/lib/timeline-colors';
 

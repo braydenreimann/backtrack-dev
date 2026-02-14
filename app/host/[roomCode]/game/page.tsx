@@ -3,14 +3,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
+import type { Card, RoomSnapshot, TimelineItem, TurnReveal } from '@/lib/contracts/game';
 import {
-  clearHostSession,
-  clearRoomStorage,
-  consumeRoomTermination,
-  getHostRoomCode,
-  getHostSessionToken,
-  markRoomTerminated,
-} from '@/lib/storage';
+  ACK_ERROR_CODES,
+  CLIENT_TO_SERVER_EVENTS,
+  SERVER_TO_CLIENT_EVENTS,
+  type AckResponse,
+  type GameEndedPayload,
+  type GameTerminationPayload,
+  type GameStartedPayload,
+  type HostResumeAck,
+  type RoomClosedPayload,
+  type TurnDealtHostPayload,
+  type TurnDealtPayload,
+  type TurnPlacedPayload,
+} from '@/lib/contracts/socket';
+import {
+  clearRoomSessionForRole,
+  getSessionRoomCodeForRole,
+  getSessionTokenForRole,
+} from '@/lib/realtime/session-role';
+import { useRoomTermination } from '@/lib/realtime/useRoomTermination';
 import { getMockHostGameState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
 import { useFullscreen } from '@/lib/useFullscreen';
@@ -20,49 +33,12 @@ import TimelineStripAnimated from './TimelineStripAnimated';
 import TurnTimer from './TurnTimer';
 import AudioPreviewControls from './AudioPreviewControls';
 import HostStatusBanners from './HostStatusBanners';
-import {
-  GAME_TERMINATE_EVENT,
-  GAME_TERMINATED_EVENT,
-  GAME_PAUSE_EVENT,
-  GAME_RESUME_EVENT,
-  type Card,
-  type GameTerminationPayload,
-  type RoomSnapshot,
-  type TimelineItem,
-  type TurnReveal,
-} from '@/lib/game-types';
-
-type TurnDealtHost = {
-  activePlayerId: string;
-  turnNumber: number;
-  card: Card;
-  timelines: Array<{ playerId: string; timeline: Card[] }>;
-};
-
-type GameStarted = {
-  turnOrder: string[];
-  activePlayerId: string | null;
-  turnNumber: number;
-  timelines: Array<{ playerId: string; timeline: Card[] }>;
-};
-
-type TurnPlaced = {
-  playerId: string;
-  placementIndex: number;
-};
-
-type AckOk = { ok: true } & Record<string, unknown>;
-
-type AckErr = { ok: false; code: string; message: string };
-
-type AckResponse = AckOk | AckErr;
 
 const TURN_DURATION_SECONDS = 40;
 const REVEAL_DURATION_MS = 3000;
 const REVEAL_FLIP_DURATION_MS = 700;
 const REVEAL_EXIT_DURATION_MS = 500;
 const REVEAL_EXIT_DELAY_MS = Math.max(0, REVEAL_DURATION_MS - REVEAL_EXIT_DURATION_MS);
-const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 export default function HostGamePage() {
   const params = useParams();
@@ -82,8 +58,6 @@ export default function HostGamePage() {
   const revealContentTimerRef = useRef<number | null>(null);
   const revealExitTimerRef = useRef<number | null>(null);
   const pendingRevealRef = useRef<TurnReveal | null>(null);
-  const terminationTimeoutRef = useRef<number | null>(null);
-  const terminatedRef = useRef(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState<string>('Connecting to game...');
   const [error, setError] = useState<string | null>(null);
@@ -168,27 +142,11 @@ export default function HostGamePage() {
     setIsPlaying(false);
   }, []);
 
-  const handleTermination = useCallback(
-    (
-      payload: { reason: string; terminatedAt: number },
-      options?: { persistMarker?: boolean }
-    ) => {
-      if (terminatedRef.current) {
-        return;
-      }
-      if (roomCode) {
-        if (options?.persistMarker !== false) {
-          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
-        }
-        clearRoomStorage(roomCode);
-      } else {
-        clearHostSession();
-      }
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-        terminationTimeoutRef.current = null;
-      }
-      terminatedRef.current = true;
+  const { handleTermination, terminatedRef, clearRedirectTimeout } = useRoomTermination({
+    role: 'host',
+    roomCode,
+    isMock,
+    onTerminateNow: () => {
       clearRevealState();
       stopPreview();
       setCurrentCard(null);
@@ -200,25 +158,14 @@ export default function HostGamePage() {
       setShowEndGameConfirm(false);
       setEndGameBusy(false);
       setPauseBusy(false);
-      setError(null);
-      setStatus('Game ended by host.');
       socketRef.current?.disconnect();
-      terminationTimeoutRef.current = window.setTimeout(() => {
-        router.replace('/host');
-      }, TERMINATION_REDIRECT_DELAY_MS);
     },
-    [clearRevealState, roomCode, router, stopPreview]
-  );
-
-  useEffect(() => {
-    if (!roomCode || isMock) {
-      return;
-    }
-    const record = consumeRoomTermination(roomCode);
-    if (record) {
-      handleTermination(record, { persistMarker: false });
-    }
-  }, [handleTermination, isMock, roomCode]);
+    onRedirect: () => {
+      router.replace('/host');
+    },
+    onStatus: setStatus,
+    onClearError: () => setError(null),
+  });
 
   const requestEndGame = () => {
     if (endGameBusy || terminatedRef.current) {
@@ -249,7 +196,10 @@ export default function HostGamePage() {
       setEndGameBusy(false);
       return;
     }
-    socket.emit(GAME_TERMINATE_EVENT, { reason: 'HOST_ENDED' }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.GAME_TERMINATE,
+      { reason: 'HOST_ENDED' },
+      (response: AckResponse) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to end the game.');
         setEndGameBusy(false);
@@ -257,7 +207,8 @@ export default function HostGamePage() {
       }
       setShowEndGameConfirm(false);
       setEndGameBusy(false);
-    });
+      }
+    );
   };
 
   const attemptPlay = useCallback(async (options?: { ignorePaused?: boolean }) => {
@@ -384,13 +335,13 @@ export default function HostGamePage() {
       return;
     }
 
-    const hostSessionToken = getHostSessionToken();
+    const hostSessionToken = getSessionTokenForRole('host');
     if (!hostSessionToken) {
       setError('Missing host session. Return to /host to create a room.');
       return;
     }
 
-    const storedRoom = getHostRoomCode();
+    const storedRoom = getSessionRoomCodeForRole('host');
     if (storedRoom && storedRoom !== roomCode) {
       setStatus('Session room mismatch. Attempting to resume anyway.');
     }
@@ -398,7 +349,7 @@ export default function HostGamePage() {
     const socket = createSocket();
     socketRef.current = socket;
 
-    socket.on('room.snapshot', (snapshot: RoomSnapshot) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_SNAPSHOT, (snapshot: RoomSnapshot) => {
       roomRef.current = snapshot;
       isPausedRef.current = snapshot.isPaused;
       setRoom(snapshot);
@@ -411,14 +362,14 @@ export default function HostGamePage() {
       }
     });
 
-    socket.on('turn.dealt', (payload: { activePlayerId: string; turnNumber: number; expiresAt: number }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_DEALT, (payload: TurnDealtPayload) => {
       setActivePlayerId(payload.activePlayerId);
       setTurnExpiresAt(payload.expiresAt);
       setTentativePlacementIndex(null);
       clearRevealState();
     });
 
-    socket.on('game.started', (payload: GameStarted) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_STARTED, (payload: GameStartedPayload) => {
       const timelineMap: Record<string, Card[]> = {};
       payload.timelines.forEach((entry) => {
         timelineMap[entry.playerId] = entry.timeline;
@@ -428,7 +379,7 @@ export default function HostGamePage() {
       setStatus('Game started. Dealing first turns...');
     });
 
-    socket.on('turn.dealt.host', (payload: TurnDealtHost) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_DEALT_HOST, (payload: TurnDealtHostPayload) => {
       const timelineMap: Record<string, Card[]> = {};
       payload.timelines.forEach((entry) => {
         timelineMap[entry.playerId] = entry.timeline;
@@ -444,15 +395,15 @@ export default function HostGamePage() {
       }
     });
 
-    socket.on('turn.placed', (payload: TurnPlaced) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_PLACED, (payload: TurnPlacedPayload) => {
       setTentativePlacementIndex(payload.placementIndex);
     });
 
-    socket.on('turn.removed', () => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_REMOVED, () => {
       setTentativePlacementIndex(null);
     });
 
-    socket.on('turn.reveal', (payload: TurnReveal) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_REVEAL, (payload: TurnReveal) => {
       if (revealTimerRef.current !== null) {
         window.clearTimeout(revealTimerRef.current);
         revealTimerRef.current = null;
@@ -474,7 +425,7 @@ export default function HostGamePage() {
       pendingRevealRef.current = payload;
     });
 
-    socket.on('game.ended', (payload: { winnerId?: string; reason: string }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_ENDED, (payload: GameEndedPayload) => {
       if (payload.winnerId) {
         const winner = roomRef.current?.players.find((player) => player.id === payload.winnerId);
         setStatus(`Game ended. Winner: ${winner?.name ?? payload.winnerId}.`);
@@ -484,53 +435,51 @@ export default function HostGamePage() {
       stopPreview();
     });
 
-    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_TERMINATED, (payload: GameTerminationPayload) => {
       handleTermination(payload);
     });
 
-    socket.on('room.closed', (payload: { reason: string }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_CLOSED, (payload: RoomClosedPayload) => {
       if (terminatedRef.current) {
         return;
       }
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
       stopPreview();
-      if (roomCode) {
-        clearRoomStorage(roomCode);
-      } else {
-        clearHostSession();
-      }
+      clearRoomSessionForRole('host', roomCode);
       router.replace('/host');
     });
 
-    socket.emit('host.resume', { hostSessionToken }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.HOST_RESUME,
+      { hostSessionToken },
+      (response: AckResponse<HostResumeAck>) => {
       if (response.ok) {
         return;
       }
-      if (response.code === 'ROOM_TERMINATED') {
+      if (response.code === ACK_ERROR_CODES.ROOM_TERMINATED) {
         handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
         return;
       }
-      if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearHostSession();
-        }
+      if (
+        response.code === ACK_ERROR_CODES.SESSION_NOT_FOUND ||
+        response.code === ACK_ERROR_CODES.ROOM_NOT_FOUND
+      ) {
+        clearRoomSessionForRole('host', roomCode);
         setError('Host session expired. Create a new room.');
         router.replace('/host');
         return;
       }
       setError(response.message ?? 'Unable to resume host session.');
-    });
+      }
+    );
 
     return () => {
       stopPreview(false);
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-      }
+      clearRedirectTimeout();
       socket.disconnect();
     };
   }, [
+    clearRedirectTimeout,
     clearRevealState,
     handleTermination,
     isMock,
@@ -539,6 +488,7 @@ export default function HostGamePage() {
     router,
     startPreview,
     stopPreview,
+    terminatedRef,
   ]);
 
   useEffect(() => {
@@ -616,7 +566,9 @@ export default function HostGamePage() {
       return;
     }
     setPauseBusy(true);
-    const event = isPaused ? GAME_RESUME_EVENT : GAME_PAUSE_EVENT;
+    const event = isPaused
+      ? CLIENT_TO_SERVER_EVENTS.GAME_RESUME
+      : CLIENT_TO_SERVER_EVENTS.GAME_PAUSE;
     socket.emit(event, { roomCode }, (response: AckResponse) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to update pause state.');

@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { TimelineItem } from '@/lib/game-types';
+import type { TimelineItem } from '@/lib/contracts/game';
 import type { TimelineCardColor } from '@/lib/timeline-colors';
 
 export type TimelineCardProps = {

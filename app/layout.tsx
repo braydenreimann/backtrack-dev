@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Space_Grotesk } from 'next/font/google';
+import { validateWebEnvAtStartup } from '@/lib/env/web-env';
 import './globals.css';
 
 const spaceGrotesk = Space_Grotesk({
@@ -18,6 +19,8 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  validateWebEnvAtStartup();
+
   return (
     <html lang="en" className={spaceGrotesk.variable}>
       <body>

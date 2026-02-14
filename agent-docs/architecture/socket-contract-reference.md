@@ -3,6 +3,12 @@
 ## Purpose
 This document captures the current Socket.IO API surface as implemented.
 
+## Canonical source
+- Runtime/source-of-truth definitions now live in:
+  - `/Users/braydenreimann/Programming/repos/bt-mvp/lib/contracts/socket.ts`
+  - `/Users/braydenreimann/Programming/repos/bt-mvp/lib/contracts/game.ts`
+- This document is descriptive. Code in `lib/contracts/*` is authoritative.
+
 ## Ack Envelope
 All ack callbacks use:
 - Success: `{ ok: true, ...data }`
@@ -111,4 +117,5 @@ All ack callbacks use:
 ## Contract Notes
 - Current naming is mixed (`client:*` exists, but `kickPlayer`, `turn.reveal`, `game.start` are legacy-style names).
 - Clients currently handle a `KICKED` ack path on resume, but server does not emit `code: 'KICKED'` today.
-- Treat this document as implementation truth until a normalized contract module is introduced.
+- Contract drift guardrail is enforced by:
+  - `npm run check:contracts`

@@ -4,26 +4,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
+import type { RoomSnapshot } from '@/lib/contracts/game';
 import {
-  clearRoomStorage,
-  clearPlayerSession,
-  consumeRoomTermination,
+  ACK_ERROR_CODES,
+  CLIENT_TO_SERVER_EVENTS,
+  SERVER_TO_CLIENT_EVENTS,
+  type AckResponse,
+  type GameTerminationPayload,
+  type PlayerResumeAck,
+  type RoomClosedPayload,
+} from '@/lib/contracts/socket';
+import {
   getPlayerName,
-  getPlayerRoomCode,
-  getPlayerSessionToken,
-  markRoomTerminated,
 } from '@/lib/storage';
+import {
+  clearRoomSessionForRole,
+  clearSessionForRole,
+  getSessionRoomCodeForRole,
+  getSessionTokenForRole,
+} from '@/lib/realtime/session-role';
+import { useRoomTermination } from '@/lib/realtime/useRoomTermination';
 import { getMockPlayRoomState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-import { GAME_TERMINATED_EVENT, type GameTerminationPayload, type RoomSnapshot } from '@/lib/game-types';
-
-type AckOk = { ok: true } & Record<string, unknown>;
-
-type AckErr = { ok: false; code: string; message: string };
-
-type AckResponse = AckOk | AckErr;
-
-const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 export default function PlayLobbyPage() {
   const params = useParams();
@@ -33,8 +35,6 @@ export default function PlayLobbyPage() {
   const roomCode = Array.isArray(params.roomCode) ? params.roomCode[0] : params.roomCode;
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const kickTimeoutRef = useRef<number | null>(null);
-  const terminationTimeoutRef = useRef<number | null>(null);
-  const terminatedRef = useRef(false);
   const [isPhone, setIsPhone] = useState<boolean | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [status, setStatus] = useState('Connecting to lobby...');
@@ -48,34 +48,21 @@ export default function PlayLobbyPage() {
     [isMock, mockQuery, router]
   );
 
-  const handleTermination = useCallback(
-    (payload: { reason: string; terminatedAt: number }, options?: { persistMarker?: boolean }) => {
-      if (roomCode) {
-        if (options?.persistMarker !== false) {
-          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
-        }
-        clearRoomStorage(roomCode);
-      } else {
-        clearPlayerSession();
-      }
+  const { handleTermination, terminatedRef, clearRedirectTimeout } = useRoomTermination({
+    role: 'player',
+    roomCode,
+    isMock,
+    onTerminateNow: () => {
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
         kickTimeoutRef.current = null;
       }
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-        terminationTimeoutRef.current = null;
-      }
-      terminatedRef.current = true;
-      setError(null);
-      setStatus('Game ended by host.');
       socketRef.current?.disconnect();
-      terminationTimeoutRef.current = window.setTimeout(() => {
-        redirectToPlay();
-      }, TERMINATION_REDIRECT_DELAY_MS);
     },
-    [redirectToPlay, roomCode]
-  );
+    onRedirect: redirectToPlay,
+    onStatus: setStatus,
+    onClearError: () => setError(null),
+  });
 
   useEffect(() => {
     if (isMock) {
@@ -91,16 +78,6 @@ export default function PlayLobbyPage() {
       setPlayerName(storedName);
     }
   }, []);
-
-  useEffect(() => {
-    if (!roomCode || isMock) {
-      return;
-    }
-    const record = consumeRoomTermination(roomCode);
-    if (record) {
-      handleTermination(record, { persistMarker: false });
-    }
-  }, [handleTermination, isMock, roomCode]);
 
   useEffect(() => {
     if (!roomCode || isPhone === null) {
@@ -126,13 +103,13 @@ export default function PlayLobbyPage() {
       return;
     }
 
-    const token = getPlayerSessionToken();
+    const token = getSessionTokenForRole('player');
     if (!token) {
       setError('Missing player session. Return to /play to join.');
       return;
     }
 
-    const storedRoom = getPlayerRoomCode();
+    const storedRoom = getSessionRoomCodeForRole('player');
     if (storedRoom && storedRoom !== roomCode) {
       setError('Session is for a different room. Return to /play to join.');
       return;
@@ -141,7 +118,7 @@ export default function PlayLobbyPage() {
     const socket = createSocket();
     socketRef.current = socket;
 
-    socket.on('room.snapshot', (snapshot: RoomSnapshot) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_SNAPSHOT, (snapshot: RoomSnapshot) => {
       setRoom(snapshot);
       if (snapshot.phase === 'LOBBY') {
         setStatus('Lobby connected.');
@@ -151,21 +128,17 @@ export default function PlayLobbyPage() {
       }
     });
 
-    socket.on('game.started', () => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_STARTED, () => {
       router.replace(`/play/${roomCode}/game`);
     });
 
-    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_TERMINATED, (payload: GameTerminationPayload) => {
       handleTermination(payload);
     });
 
-    socket.on('player.kicked', () => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.PLAYER_KICKED, () => {
       setKicked(true);
-      if (roomCode) {
-        clearRoomStorage(roomCode);
-      } else {
-        clearPlayerSession();
-      }
+      clearRoomSessionForRole('player', roomCode);
       setError('You were removed by the host.');
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
@@ -175,13 +148,9 @@ export default function PlayLobbyPage() {
       }, 1500);
     });
 
-    socket.on('room.closed', (payload: { reason: string }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_CLOSED, (payload: RoomClosedPayload) => {
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
-      if (roomCode) {
-        clearRoomStorage(roomCode);
-      } else {
-        clearPlayerSession();
-      }
+      clearRoomSessionForRole('player', roomCode);
       redirectToPlay();
     });
 
@@ -193,56 +162,50 @@ export default function PlayLobbyPage() {
       setError('Connection lost. Try rejoining.');
     });
 
-    socket.emit('player.resume', { playerSessionToken: token }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.PLAYER_RESUME,
+      { playerSessionToken: token },
+      (response: AckResponse<PlayerResumeAck>) => {
       if (response.ok) {
         return;
       }
-      if (response.code === 'KICKED') {
+      if (response.code === ACK_ERROR_CODES.KICKED) {
         setKicked(true);
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearPlayerSession();
-        }
+        clearRoomSessionForRole('player', roomCode);
         setError('You were removed by the host.');
         redirectToPlay();
         return;
       }
-      if (response.code === 'ROOM_TERMINATED') {
+      if (response.code === ACK_ERROR_CODES.ROOM_TERMINATED) {
         handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
         return;
       }
-      if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearPlayerSession();
-        }
+      if (
+        response.code === ACK_ERROR_CODES.SESSION_NOT_FOUND ||
+        response.code === ACK_ERROR_CODES.ROOM_NOT_FOUND
+      ) {
+        clearRoomSessionForRole('player', roomCode);
         redirectToPlay();
         return;
       }
-      if (response.code === 'NON_MOBILE_DEVICE') {
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearPlayerSession();
-        }
+      if (response.code === ACK_ERROR_CODES.NON_MOBILE_DEVICE) {
+        clearRoomSessionForRole('player', roomCode);
         setError('Please join from a phone.');
         return;
       }
       setError(response.message ?? 'Unable to resume player session.');
-    });
+      }
+    );
 
     return () => {
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
       }
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-      }
+      clearRedirectTimeout();
       socket.disconnect();
     };
   }, [
+    clearRedirectTimeout,
     handleTermination,
     isMock,
     mockQuery,
@@ -251,6 +214,7 @@ export default function PlayLobbyPage() {
     redirectToPlay,
     roomCode,
     router,
+    terminatedRef,
   ]);
 
   useEffect(() => {
@@ -265,20 +229,20 @@ export default function PlayLobbyPage() {
 
   const leaveLobby = () => {
     if (isMock) {
-      clearPlayerSession();
+      clearSessionForRole('player');
       redirectToPlay();
       return;
     }
     const socket = socketRef.current;
     if (!socket) {
-      clearPlayerSession();
+      clearSessionForRole('player');
       redirectToPlay();
       return;
     }
     setLeaving(true);
-    socket.emit('room.leave', {}, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.ROOM_LEAVE, {}, (response: AckResponse) => {
       if (response.ok) {
-        clearPlayerSession();
+        clearSessionForRole('player');
         redirectToPlay();
         return;
       }

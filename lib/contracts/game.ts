@@ -1,3 +1,5 @@
+export type RoomPhase = 'LOBBY' | 'DEAL' | 'PLACE' | 'LOCK' | 'REVEAL' | 'END';
+
 export type Card = {
   title: string;
   artist: string;
@@ -14,7 +16,7 @@ export type RoomPlayer = {
 export type RoomSnapshot = {
   code: string;
   seq: number;
-  phase: string;
+  phase: RoomPhase;
   activePlayerId: string | null;
   turnNumber: number;
   turnExpiresAt: number | null;
@@ -24,13 +26,20 @@ export type RoomSnapshot = {
   players: RoomPlayer[];
 };
 
+export type TimelineByPlayer = Array<{ playerId: string; timeline: Card[] }>;
+
+export type ScoreByPlayer = Array<{ playerId: string; score: number }>;
+
+export type TurnRevealReason = 'LOCK' | 'TIMEOUT' | string;
+
 export type TurnReveal = {
   playerId: string;
   card: Card;
   correct: boolean;
   placementIndex: number;
   timeline: Card[];
-  reason: string;
+  scores: ScoreByPlayer;
+  reason: TurnRevealReason;
 };
 
 export type TimelineItem = {
@@ -41,23 +50,4 @@ export type TimelineItem = {
   isExiting: boolean;
   highlight?: 'good' | 'bad';
   isCurrent: boolean;
-};
-
-export const GAME_TERMINATED_EVENT = 'game.terminated';
-export const GAME_TERMINATE_EVENT = 'game.terminate';
-export const GAME_PAUSE_EVENT = 'client:game.pause';
-export const GAME_RESUME_EVENT = 'client:game.resume';
-
-export type GameTerminationPayload = {
-  roomCode: string;
-  reason: string;
-  terminatedAt: number;
-};
-
-export type GamePausePayload = {
-  roomCode: string;
-};
-
-export type GameResumePayload = {
-  roomCode: string;
 };

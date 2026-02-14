@@ -1,63 +1,15 @@
-type RoomPhase = 'LOBBY' | 'DEAL' | 'PLACE' | 'LOCK' | 'REVEAL' | 'END';
-
-type Card = {
-  title: string;
-  artist: string;
-  year: number;
-};
-
-type RoomPlayer = {
-  id: string;
-  name: string;
-  connected: boolean;
-  cardCount: number;
-};
-
-type HostRoomSnapshot = {
-  code: string;
-  seq: number;
-  phase: RoomPhase;
-  activePlayerId: string | null;
-  turnNumber: number;
-  turnExpiresAt: number | null;
-  isPaused: boolean;
-  pausedTurnRemainingMs: number | null;
-  host: { connected: boolean };
-  players: RoomPlayer[];
-};
-
-type PlayRoomSnapshot = {
-  code: string;
-  seq: number;
-  phase: RoomPhase;
-  activePlayerId: string | null;
-  turnNumber: number;
-  host: { connected: boolean };
-  turnExpiresAt: number | null;
-  isPaused: boolean;
-  pausedTurnRemainingMs: number | null;
-  players: Array<{ id: string; name: string; connected: boolean; cardCount: number }>;
-};
-
-type TurnReveal = {
-  playerId: string;
-  card: Card;
-  correct: boolean;
-  placementIndex: number;
-  timeline: Card[];
-  reason: string;
-};
+import type { Card, RoomPlayer, RoomSnapshot, TurnReveal } from '@/lib/contracts/game';
 
 type PreviewState = 'idle' | 'loading' | 'ready' | 'blocked' | 'unavailable';
 
 export type MockHostLobbyState = {
-  room: HostRoomSnapshot;
+  room: RoomSnapshot;
   status: string;
   error: string | null;
 };
 
 export type MockHostGameState = {
-  room: HostRoomSnapshot;
+  room: RoomSnapshot;
   status: string;
   error: string | null;
   activePlayerId: string | null;
@@ -72,7 +24,7 @@ export type MockHostGameState = {
 };
 
 export type MockPlayRoomState = {
-  room: PlayRoomSnapshot;
+  room: RoomSnapshot;
   status: string;
   error: string | null;
   activePlayerId: string | null;
@@ -94,7 +46,7 @@ const basePlayers: RoomPlayer[] = [
   { id: 'p3', name: 'Casey', connected: false, cardCount: 4 },
 ];
 
-const baseHostRoom: HostRoomSnapshot = {
+const baseHostRoom: RoomSnapshot = {
   code: mockRoomCode,
   seq: 12,
   phase: 'LOBBY',
@@ -107,7 +59,7 @@ const baseHostRoom: HostRoomSnapshot = {
   players: basePlayers,
 };
 
-const basePlayRoom: PlayRoomSnapshot = {
+const basePlayRoom: RoomSnapshot = {
   code: mockRoomCode,
   seq: 12,
   phase: 'LOBBY',
@@ -188,7 +140,7 @@ export const getMockHostGameState = (state: string | null): MockHostGameState =>
   const key = normalizeState(state);
   const now = Date.now();
   const turnExpiresAt = now + 28_000;
-  const room: HostRoomSnapshot = {
+  const room: RoomSnapshot = {
     ...baseHostRoom,
     phase: 'PLACE',
     activePlayerId: 'p2',
@@ -248,6 +200,7 @@ export const getMockHostGameState = (state: string | null): MockHostGameState =>
         correct: true,
         placementIndex: 1,
         timeline: revealTimeline,
+        scores: [],
         reason: 'mock',
       },
       previewState: 'ready',
@@ -278,7 +231,7 @@ export const getMockPlayRoomState = (state: string | null): MockPlayRoomState =>
     clonePlayers(basePlayers).map((player) =>
       player.id === mockPlayerId ? { ...player, cardCount } : player
     );
-  const room: PlayRoomSnapshot = {
+  const room: RoomSnapshot = {
     ...basePlayRoom,
     phase: 'PLACE',
     activePlayerId: mockPlayerId,
@@ -352,6 +305,7 @@ export const getMockPlayRoomState = (state: string | null): MockPlayRoomState =>
         correct: false,
         placementIndex: 1,
         timeline: revealTimeline,
+        scores: [],
         reason: 'mock',
       },
       placementIndex: null,

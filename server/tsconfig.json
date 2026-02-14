@@ -5,13 +5,12 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
-    "rootDir": "src",
     "outDir": "dist",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src"],
+  "include": ["src", "../lib/contracts/**/*.ts"],
   "exclude": ["src/**/*.test.ts"]
 }

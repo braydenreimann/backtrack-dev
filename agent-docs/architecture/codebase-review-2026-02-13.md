@@ -40,7 +40,7 @@ The codebase has duplicated event declarations and inconsistent naming patterns 
 Impact: API drift risk, brittle refactors, and harder auditing of backward compatibility.
 
 Evidence:
-- `/Users/braydenreimann/Programming/repos/bt-mvp/lib/game-types.ts:46`
+- `/Users/braydenreimann/Programming/repos/bt-mvp/lib/contracts/socket.ts`
 - `/Users/braydenreimann/Programming/repos/bt-mvp/server/src/server.ts:115`
 - `/Users/braydenreimann/Programming/repos/bt-mvp/server/src/server.ts:1155`
 - `/Users/braydenreimann/Programming/repos/bt-mvp/app/play/[roomCode]/lobby/page.tsx:200`

@@ -4,51 +4,38 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createSocket } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
+import type { Card, RoomSnapshot, TurnReveal } from '@/lib/contracts/game';
 import {
-  clearRoomStorage,
-  clearPlayerSession,
-  consumeRoomTermination,
+  ACK_ERROR_CODES,
+  CLIENT_TO_SERVER_EVENTS,
+  SERVER_TO_CLIENT_EVENTS,
+  type AckResponse,
+  type GameEndedPayload,
+  type GameTerminationPayload,
+  type PlayerResumeAck,
+  type RoomClosedPayload,
+  type TurnDealtPayload,
+  type TurnDealtPlayerPayload,
+  type TurnPlacedPayload,
+  type TurnRemovedPayload,
+} from '@/lib/contracts/socket';
+import {
   getControllerHelpKey,
   getPlayerId,
   getPlayerName,
-  getPlayerRoomCode,
-  getPlayerSessionToken,
-  markRoomTerminated,
 } from '@/lib/storage';
+import {
+  clearRoomSessionForRole,
+  clearSessionForRole,
+  getSessionRoomCodeForRole,
+  getSessionTokenForRole,
+} from '@/lib/realtime/session-role';
+import { useRoomTermination } from '@/lib/realtime/useRoomTermination';
 import { getMockPlayRoomState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
-import {
-  GAME_TERMINATED_EVENT,
-  type Card,
-  type GameTerminationPayload,
-  type RoomSnapshot,
-  type TurnReveal,
-} from '@/lib/game-types';
 import ControllerTimeline from './ControllerTimeline';
 import ControllerHand from './ControllerHand';
 import RevealButton from './RevealButton';
-
-type TurnDealtPlayer = {
-  activePlayerId: string;
-  timeline: Card[];
-};
-
-type TurnPlaced = {
-  playerId: string;
-  placementIndex: number;
-};
-
-type TurnRemoved = {
-  playerId: string;
-};
-
-type AckOk = { ok: true } & Record<string, unknown>;
-
-type AckErr = { ok: false; code: string; message: string };
-
-type AckResponse = AckOk | AckErr;
-
-const TERMINATION_REDIRECT_DELAY_MS = 1500;
 
 const formatTimer = (seconds: number | null) => {
   if (seconds === null) {
@@ -67,9 +54,7 @@ export default function PlayerGamePage() {
   const roomRef = useRef<RoomSnapshot | null>(null);
   const playerIdRef = useRef<string | null>(null);
   const kickTimeoutRef = useRef<number | null>(null);
-  const terminationTimeoutRef = useRef<number | null>(null);
   const revealPendingRef = useRef(false);
-  const terminatedRef = useRef(false);
   const [isPhone, setIsPhone] = useState<boolean | null>(null);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
@@ -92,29 +77,15 @@ export default function PlayerGamePage() {
   );
   const helpKey = roomCode ? getControllerHelpKey(roomCode) : null;
 
-  const handleTermination = useCallback(
-    (
-      payload: { reason: string; terminatedAt: number },
-      options?: { persistMarker?: boolean }
-    ) => {
-      if (terminatedRef.current) {
-        return;
-      }
-      if (roomCode) {
-        if (options?.persistMarker !== false) {
-          markRoomTerminated(roomCode, payload.reason, payload.terminatedAt);
-        }
-        clearRoomStorage(roomCode);
-      }
+  const { handleTermination, terminatedRef, clearRedirectTimeout } = useRoomTermination({
+    role: 'player',
+    roomCode,
+    isMock,
+    onTerminateNow: () => {
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
         kickTimeoutRef.current = null;
       }
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-        terminationTimeoutRef.current = null;
-      }
-      terminatedRef.current = true;
       revealPendingRef.current = false;
       setReveal(null);
       setRevealBusy(false);
@@ -123,15 +94,12 @@ export default function PlayerGamePage() {
       setIsPaused(false);
       setPausedTurnRemainingMs(null);
       setRoom((prev) => (prev ? { ...prev, phase: 'END' } : prev));
-      setError(null);
-      setStatus('Game ended by host.');
       socketRef.current?.disconnect();
-      terminationTimeoutRef.current = window.setTimeout(() => {
-        redirectToPlay();
-      }, TERMINATION_REDIRECT_DELAY_MS);
     },
-    [redirectToPlay, roomCode]
-  );
+    onRedirect: redirectToPlay,
+    onStatus: setStatus,
+    onClearError: () => setError(null),
+  });
 
   useEffect(() => {
     if (isMock) {
@@ -183,16 +151,6 @@ export default function PlayerGamePage() {
     }
     setHelpDismissed(true);
   }, [helpDismissed, helpKey, reveal]);
-
-  useEffect(() => {
-    if (!roomCode || isMock) {
-      return;
-    }
-    const record = consumeRoomTermination(roomCode);
-    if (record) {
-      handleTermination(record, { persistMarker: false });
-    }
-  }, [handleTermination, isMock, roomCode]);
 
   useEffect(() => {
     if (isPaused) {
@@ -266,13 +224,13 @@ export default function PlayerGamePage() {
       return;
     }
 
-    const token = getPlayerSessionToken();
+    const token = getSessionTokenForRole('player');
     if (!token) {
       setError('Missing player session. Return to /play to join.');
       return;
     }
 
-    const storedRoom = getPlayerRoomCode();
+    const storedRoom = getSessionRoomCodeForRole('player');
     if (storedRoom && storedRoom !== roomCode) {
       setError('Session is for a different room. Return to /play to join.');
       return;
@@ -281,7 +239,7 @@ export default function PlayerGamePage() {
     const socket = createSocket();
     socketRef.current = socket;
 
-    socket.on('room.snapshot', (snapshot: RoomSnapshot) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_SNAPSHOT, (snapshot: RoomSnapshot) => {
       roomRef.current = snapshot;
       setRoom(snapshot);
       setActivePlayerId(snapshot.activePlayerId ?? null);
@@ -293,7 +251,7 @@ export default function PlayerGamePage() {
       }
     });
 
-    socket.on('turn.dealt', (payload: { activePlayerId: string; expiresAt: number }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_DEALT, (payload: TurnDealtPayload) => {
       setActivePlayerId(payload.activePlayerId);
       setTurnExpiresAt(payload.expiresAt);
       setReveal(null);
@@ -302,7 +260,7 @@ export default function PlayerGamePage() {
       revealPendingRef.current = false;
     });
 
-    socket.on('turn.dealt.player', (payload: TurnDealtPlayer) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_DEALT_PLAYER, (payload: TurnDealtPlayerPayload) => {
       setTimeline(payload.timeline);
       setReveal(null);
       setPlacementIndex(null);
@@ -312,19 +270,19 @@ export default function PlayerGamePage() {
       revealPendingRef.current = false;
     });
 
-    socket.on('turn.placed', (payload: TurnPlaced) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_PLACED, (payload: TurnPlacedPayload) => {
       if (payload.playerId === playerIdRef.current) {
         setPlacementIndex(payload.placementIndex);
       }
     });
 
-    socket.on('turn.removed', (payload: TurnRemoved) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_REMOVED, (payload: TurnRemovedPayload) => {
       if (payload.playerId === playerIdRef.current) {
         setPlacementIndex(null);
       }
     });
 
-    socket.on('turn.reveal', (payload: TurnReveal) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.TURN_REVEAL, (payload: TurnReveal) => {
       if (payload.playerId === playerIdRef.current) {
         setReveal(payload);
         setTimeline(payload.timeline);
@@ -334,7 +292,7 @@ export default function PlayerGamePage() {
       }
     });
 
-    socket.on('game.ended', (payload: { winnerId?: string; reason: string }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_ENDED, (payload: GameEndedPayload) => {
       if (payload.winnerId) {
         const winner = roomRef.current?.players.find((player) => player.id === payload.winnerId);
         setStatus(`Game ended. Winner: ${winner?.name ?? payload.winnerId}.`);
@@ -343,16 +301,12 @@ export default function PlayerGamePage() {
       }
     });
 
-    socket.on(GAME_TERMINATED_EVENT, (payload: GameTerminationPayload) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.GAME_TERMINATED, (payload: GameTerminationPayload) => {
       handleTermination(payload);
     });
 
-    socket.on('player.kicked', () => {
-      if (roomCode) {
-        clearRoomStorage(roomCode);
-      } else {
-        clearPlayerSession();
-      }
+    socket.on(SERVER_TO_CLIENT_EVENTS.PLAYER_KICKED, () => {
+      clearRoomSessionForRole('player', roomCode);
       setError('You were removed by the host.');
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
@@ -362,13 +316,9 @@ export default function PlayerGamePage() {
       }, 1500);
     });
 
-    socket.on('room.closed', (payload: { reason: string }) => {
+    socket.on(SERVER_TO_CLIENT_EVENTS.ROOM_CLOSED, (payload: RoomClosedPayload) => {
       setError(`Room closed: ${payload?.reason ?? 'unknown'}`);
-      if (roomCode) {
-        clearRoomStorage(roomCode);
-      } else {
-        clearPlayerSession();
-      }
+      clearRoomSessionForRole('player', roomCode);
       redirectToPlay();
     });
 
@@ -380,51 +330,49 @@ export default function PlayerGamePage() {
       setError('Connection lost. Try rejoining.');
     });
 
-    socket.emit('player.resume', { playerSessionToken: token }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.PLAYER_RESUME,
+      { playerSessionToken: token },
+      (response: AckResponse<PlayerResumeAck>) => {
       if (response.ok) {
         return;
       }
-      if (response.code === 'KICKED') {
-        clearPlayerSession();
+      if (response.code === ACK_ERROR_CODES.KICKED) {
+        clearSessionForRole('player');
         setError('You were removed by the host.');
         redirectToPlay();
         return;
       }
-      if (response.code === 'ROOM_TERMINATED') {
+      if (response.code === ACK_ERROR_CODES.ROOM_TERMINATED) {
         handleTermination({ reason: 'HOST_ENDED', terminatedAt: Date.now() });
         return;
       }
-      if (response.code === 'SESSION_NOT_FOUND' || response.code === 'ROOM_NOT_FOUND') {
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearPlayerSession();
-        }
+      if (
+        response.code === ACK_ERROR_CODES.SESSION_NOT_FOUND ||
+        response.code === ACK_ERROR_CODES.ROOM_NOT_FOUND
+      ) {
+        clearRoomSessionForRole('player', roomCode);
         redirectToPlay();
         return;
       }
-      if (response.code === 'NON_MOBILE_DEVICE') {
-        if (roomCode) {
-          clearRoomStorage(roomCode);
-        } else {
-          clearPlayerSession();
-        }
+      if (response.code === ACK_ERROR_CODES.NON_MOBILE_DEVICE) {
+        clearRoomSessionForRole('player', roomCode);
         setError('Please join from a phone.');
         return;
       }
       setError(response.message ?? 'Unable to resume player session.');
-    });
+      }
+    );
 
     return () => {
       if (kickTimeoutRef.current !== null) {
         window.clearTimeout(kickTimeoutRef.current);
       }
-      if (terminationTimeoutRef.current !== null) {
-        window.clearTimeout(terminationTimeoutRef.current);
-      }
+      clearRedirectTimeout();
       socket.disconnect();
     };
   }, [
+    clearRedirectTimeout,
     handleTermination,
     isMock,
     mockQuery,
@@ -433,6 +381,7 @@ export default function PlayerGamePage() {
     redirectToPlay,
     roomCode,
     router,
+    terminatedRef,
   ]);
 
   const isActive = Boolean(
@@ -466,7 +415,7 @@ export default function PlayerGamePage() {
     if (!socket) {
       return;
     }
-    socket.emit('turn.place', { placementIndex: index }, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.TURN_PLACE, { placementIndex: index }, (response: AckResponse) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to place card.');
       }
@@ -482,7 +431,7 @@ export default function PlayerGamePage() {
     if (!socket) {
       return;
     }
-    socket.emit('turn.remove', {}, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.TURN_REMOVE, {}, (response: AckResponse) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to remove placement.');
       }
@@ -501,7 +450,7 @@ export default function PlayerGamePage() {
       revealPendingRef.current = false;
       return;
     }
-    socket.emit('turn.reveal', {}, (response: AckResponse) => {
+    socket.emit(CLIENT_TO_SERVER_EVENTS.TURN_REVEAL, {}, (response: AckResponse) => {
       if (!response.ok) {
         setError(response.message ?? 'Unable to reveal.');
         setRevealBusy(false);

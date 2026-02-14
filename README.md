@@ -1,5 +1,9 @@
 # Backtrack MVP
 
+## Documentation
+- Human-facing docs: `/Users/braydenreimann/Programming/repos/bt-mvp/human-docs/index.md`
+- Agent-facing docs: `/Users/braydenreimann/Programming/repos/bt-mvp/agent-docs/index.md`
+
 ## Current flow (real game)
 - Host: `/host` -> create room -> `/host/:roomCode/lobby` -> start -> `/host/:roomCode/game`.
 - Player: `/play` -> join -> `/play/:roomCode` -> wait in lobby -> play turns.
@@ -14,6 +18,13 @@ Notes:
 - By default, the web app connects to `http://<current-hostname>:3001` in the browser.
 - The socket server binds to `0.0.0.0` by default so phones on the same Wi-Fi can reach it.
 - You can skip the server entirely when using mock mode (below).
+- In deployed environments, set `NEXT_PUBLIC_SOCKET_URL` to the Fly realtime origin.
+- In production server environments, set `CORS_ORIGINS` to a comma-separated web origin allowlist.
+
+## Quality gates
+- `npm run check:contracts` validates socket contract drift rules.
+- `npm run check:docs` validates human-docs vs agent-docs boundary rules.
+- `npm run verify` runs contracts + lint + tests + web build + server build.
 
 ## Networking notes (local dev)
 Immediate fix (current behavior):

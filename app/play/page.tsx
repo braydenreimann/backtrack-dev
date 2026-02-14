@@ -5,13 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { createSocket, getSocketUrl } from '@/lib/socket';
 import { isPhoneDevice } from '@/lib/device';
 import { getPlayerRoomCode, getPlayerSessionToken, setPlayerSession } from '@/lib/storage';
+import {
+  ACK_ERROR_CODES,
+  CLIENT_TO_SERVER_EVENTS,
+  type AckResponse,
+  type RoomJoinAck,
+} from '@/lib/contracts/socket';
 import { getMockConfig } from '@/lib/mock';
-
-type AckOk = { ok: true } & Record<string, unknown>;
-
-type AckErr = { ok: false; code: string; message: string };
-
-type AckResponse = AckOk | AckErr;
 
 const normalizeRoomCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
 
@@ -89,7 +89,10 @@ function PlayLandingPageContent() {
     const trimmedRoom = normalizeRoomCode(roomCode);
     const trimmedName = name.trim();
 
-    socket.emit('room.join', { roomCode: trimmedRoom, name: trimmedName }, (response: AckResponse) => {
+    socket.emit(
+      CLIENT_TO_SERVER_EVENTS.ROOM_JOIN,
+      { roomCode: trimmedRoom, name: trimmedName },
+      (response: AckResponse<RoomJoinAck>) => {
       if (settled) {
         return;
       }
@@ -97,24 +100,25 @@ function PlayLandingPageContent() {
       window.clearTimeout(joinTimeout);
       socket.off('connect_error', handleConnectError);
       if (response.ok) {
-        const playerId = response.playerId as string;
-        const playerSessionToken = response.playerSessionToken as string;
+        const playerId = response.playerId;
+        const playerSessionToken = response.playerSessionToken;
         setPlayerSession(playerSessionToken, playerId, trimmedRoom, trimmedName);
         socket.disconnect();
         router.push(`/play/${trimmedRoom}`);
       } else {
-        if (response.code === 'ROOM_TERMINATED') {
+        if (response.code === ACK_ERROR_CODES.ROOM_TERMINATED) {
           setError('This room has already ended. Ask the host for a new code.');
         } else {
           setError(response.message ?? 'Unable to join room.');
         }
         socket.disconnect();
         setLoading(false);
-        if (response.code === 'NON_MOBILE_DEVICE') {
+        if (response.code === ACK_ERROR_CODES.NON_MOBILE_DEVICE) {
           setIsPhone(false);
         }
       }
-    });
+      }
+    );
   };
 
   return (
