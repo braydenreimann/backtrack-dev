@@ -1,4 +1,6 @@
-# Backtrack MVP Context (Apple iTunes Search API)
+# Backtrack MVP Context (Apple Music Catalog IDs)
+
+**This file currently outdated. Please ignore it right now.**
 
 This document defines the **current MVP assumptions and constraints** for Backtrack.  
 It supersedes any earlier Spotify-based MVP context.
@@ -44,26 +46,23 @@ It supersedes any earlier Spotify-based MVP context.
 - No OAuth of any kind.
 
 ### Playback source
-- Music previews are sourced via the **Apple iTunes Search API**.
-- Lookup happens **client-side on the host only**:
+- Music playback is sourced via **Apple MusicKit** using **catalog song IDs**.
+- Runtime uses lookup/queue by ID only (no title/artist search):
   ```
-  GET https://itunes.apple.com/search
-    ?term=<encoded "title artist">
-    &entity=song
-    &limit=1
+  GET /v1/catalog/us/songs/{songId}
+  Authorization: Bearer <developer_token>
   ```
 
 ### Playback behavior
-- Use `previewUrl` (≈30 seconds) when available.
-- Playback uses `HTMLAudioElement` in the **host browser only**.
+- Playback uses MusicKit in the **host browser only**.
 - Phones **never play audio**.
 - Phones **never receive song metadata** for the current card before reveal.
 - On each DEAL:
-  - Stop/pause any previous preview.
-  - Attempt to autoplay the new preview.
-- If autoplay is blocked or `previewUrl` is missing:
-  - Show a host warning (“Preview unavailable — continue without audio”).
-  - Gameplay **continues without blocking**.
+  - Stop/pause any previous playback.
+  - Queue and autoplay by catalog song ID.
+- If playback fails:
+  - Skip the card and append an unavailable record for admin remap.
+  - Gameplay continues with a replacement card.
 
 ---
 
@@ -149,21 +148,32 @@ Backtrack is a **TV-first** party game. The shared host screen is the primary ga
 
 ## Seed Deck Format
 
-- Deck is a **static JSON file** (`cards.json`).
-- No external IDs are required.
+- Deck is generated into a **static JSON file** (`deck.json`) from `cards.json`.
+- Apple Music catalog IDs are required in generated deck cards.
 
 ### Card schema
 ```json
 {
   "title": "Song Title",
   "artist": "Artist Name",
-  "year": 1953
+  "year": 1953,
+  "am": {
+    "storefront": "us",
+    "songId": "123456789",
+    "isrc": "USUM70000001",
+    "matchedTitle": "Song Title",
+    "matchedArtist": "Artist Name",
+    "matchedAlbum": "Album Name",
+    "durationMs": 200000,
+    "explicit": false,
+    "lastVerifiedAt": "2026-02-15T00:00:00Z"
+  }
 }
 ```
 
 ### Notes
-- `songId`, Spotify URIs, and Apple IDs are intentionally **not stored**.
-- iTunes Search results are resolved **ephemerally per deal**.
+- `songId` is persisted in generated deck cards.
+- Runtime audio never performs title/artist catalog search.
 - Deck order is shuffled per game.
 - No repeats within a single game.
 

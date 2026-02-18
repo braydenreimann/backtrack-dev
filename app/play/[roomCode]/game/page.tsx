@@ -19,9 +19,11 @@ import { getMockPlayRoomState } from '@/lib/fixtures';
 import { getMockConfig } from '@/lib/mock';
 import {
   GAME_TERMINATED_EVENT,
+  TURN_SKIPPED_EVENT,
   type Card,
   type GameTerminationPayload,
   type RoomSnapshot,
+  type TurnSkippedPayload,
   type TurnReveal,
 } from '@/lib/game-types';
 import ControllerTimeline from './components/ControllerTimeline';
@@ -322,6 +324,14 @@ export default function PlayerGamePage() {
       if (payload.playerId === playerIdRef.current) {
         setPlacementIndex(null);
       }
+    });
+
+    socket.on(TURN_SKIPPED_EVENT, (_payload: TurnSkippedPayload) => {
+      setReveal(null);
+      setPlacementIndex(null);
+      setRevealBusy(false);
+      revealPendingRef.current = false;
+      setStatus('Track unavailable. Waiting for replacement card.');
     });
 
     socket.on('turn.reveal', (payload: TurnReveal) => {

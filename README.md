@@ -6,14 +6,16 @@
 
 ## Local dev
 1) Install web deps: `npm install`
+2) Generate `deck.json` from `cards.json`: `npm run deck:generate`
 3) Start server: `cd server && npm run dev`
-2) Start web app: `npm run dev` (http://localhost:3000)
+4) Start web app: `npm run dev` (http://localhost:3000)
    - Optional override: `NEXT_PUBLIC_SOCKET_URL=http://<LAN_IP>:3001 npm run dev`
 
 Notes:
 - By default, the web app connects to `http://<current-hostname>:3001` in the browser.
 - The socket server binds to `0.0.0.0` by default so phones on the same Wi-Fi can reach it.
 - You can skip the server entirely when using mock mode (below).
+- `npm run deck:generate` requires Apple Music credentials in `credentials/musickit.txt` and a `.p8` key in `keys/`.
 
 ## Networking notes (local dev)
 Immediate fix (current behavior):
