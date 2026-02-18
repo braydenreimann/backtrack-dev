@@ -9,8 +9,8 @@ const STOREFRONT = process.env.APPLE_MUSIC_STOREFRONT?.trim() || 'us';
 const SEARCH_LIMIT = 10;
 const RETRY_ATTEMPTS = 3;
 
-const cardsPath = resolve(ROOT_DIR, 'cards.json');
-const deckPath = resolve(ROOT_DIR, '/server/data/deck.json');
+const cardsPath = resolve(ROOT_DIR, 'server/data/cards.json');
+const deckPath = resolve(ROOT_DIR, 'server/data/deck.json');
 const unavailablePath = resolve(ROOT_DIR, 'logs/unavailable.txt');
 
 const normalizeText = (value) => {
@@ -238,6 +238,7 @@ const generateDeck = async () => {
     deck.push(toDeckCard({ title, artist, year }, song, STOREFRONT, lastVerifiedAt));
   }
 
+  mkdirSync(dirname(deckPath), { recursive: true });
   mkdirSync(dirname(unavailablePath), { recursive: true });
   writeFileSync(deckPath, `${JSON.stringify(deck, null, 2)}\n`);
   writeFileSync(unavailablePath, unavailable.length > 0 ? `${unavailable.join('\n')}\n` : '');
