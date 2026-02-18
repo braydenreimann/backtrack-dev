@@ -1,22 +1,18 @@
-type PreviewState = 'idle' | 'loading' | 'ready' | 'blocked' | 'unavailable';
+type PreviewState = 'idle' | 'loading' | 'ready' | 'unavailable';
 
 export type AudioPreviewControlsProps = {
   phase: string | undefined;
   previewState: PreviewState;
-  previewUrl: string | null;
   isPlaying: boolean;
   isPaused: boolean;
-  onAttemptPlay: () => void;
   onTogglePlay: () => void;
 };
 
 export default function AudioPreviewControls({
   phase,
   previewState,
-  previewUrl,
   isPlaying,
   isPaused,
-  onAttemptPlay,
   onTogglePlay,
 }: AudioPreviewControlsProps) {
   if (phase === 'LOBBY') {
@@ -27,16 +23,11 @@ export default function AudioPreviewControls({
 
   return (
     <div className="host-audio">
-      {previewState === 'loading' ? <div className="status">Searching iTunes preview...</div> : null}
+      {previewState === 'loading' ? <div className="status">Loading Apple Music preview...</div> : null}
       {previewState === 'unavailable' ? (
-        <div className="status bad">Preview unavailable - continue without audio</div>
+        <div className="status bad">Preview unavailable - skipping card</div>
       ) : null}
-      {previewState === 'blocked' ? (
-        <button className="button small" onClick={onAttemptPlay} disabled={isDisabled}>
-          Tap to Play Preview
-        </button>
-      ) : null}
-      {previewUrl && previewState === 'ready' ? (
+      {previewState === 'ready' ? (
         <button className="button secondary small" onClick={onTogglePlay} disabled={isDisabled}>
           {isPlaying ? 'Pause preview' : 'Play preview'}
         </button>

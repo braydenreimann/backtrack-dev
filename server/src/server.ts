@@ -1,6 +1,6 @@
 import { createServer } from 'http';
 import { randomInt, randomUUID } from 'crypto';
-import { readFileSync } from 'fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
@@ -11,6 +11,19 @@ type Card = {
   title: string;
   artist: string;
   year: number;
+  am: AppleMusicCardMetadata;
+};
+
+type AppleMusicCardMetadata = {
+  storefront: string;
+  songId: string;
+  isrc: string | null;
+  matchedTitle: string;
+  matchedArtist: string;
+  matchedAlbum: string | null;
+  durationMs: number | null;
+  explicit: boolean;
+  lastVerifiedAt: string;
 };
 
 type HostState = {
@@ -104,6 +117,14 @@ type ResumePayload = {
   roomCode: string;
 };
 
+type TurnSkipUnavailablePayload = {
+  roomCode: string;
+  songId: string;
+  title: string;
+  artist: string;
+  reason: string;
+};
+
 type TerminationRecord = {
   roomCode: string;
   reason: string;
@@ -118,12 +139,116 @@ const WIN_CARD_COUNT = 10;
 const TERMINATION_TTL_MS = 10 * 60 * 1000;
 const GAME_PAUSE_EVENT = 'client:game.pause';
 const GAME_RESUME_EVENT = 'client:game.resume';
+const TURN_SKIP_UNAVAILABLE_EVENT = 'client:turn.skip_unavailable';
+const TURN_SKIPPED_EVENT = 'turn.skipped';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const baseDeck: Card[] = JSON.parse(
-  readFileSync(resolve(__dirname, '../../cards.json'), 'utf-8')
-) as Card[];
+const DECK_PATH = resolve(__dirname, '../../server/data/deck.json');
+const UNAVAILABLE_LOG_PATH = resolve(__dirname, '../../logs/unavailable.txt');
+
+const validateString = (value: unknown): value is string => {
+  return typeof value === 'string' && value.trim().length > 0;
+};
+
+const validateCard = (rawCard: unknown, index: number): Card => {
+  if (!rawCard || typeof rawCard !== 'object') {
+    throw new Error(`Invalid card at index ${index}: expected an object.`);
+  }
+  const card = rawCard as Partial<Card>;
+  if (!validateString(card.title)) {
+    throw new Error(`Invalid card at index ${index}: missing title.`);
+  }
+  if (!validateString(card.artist)) {
+    throw new Error(`Invalid card at index ${index}: missing artist.`);
+  }
+  if (typeof card.year !== 'number' || !Number.isFinite(card.year)) {
+    throw new Error(`Invalid card at index ${index}: missing year.`);
+  }
+
+  const am = card.am as Partial<AppleMusicCardMetadata> | undefined;
+  if (!am || typeof am !== 'object') {
+    throw new Error(`Invalid card at index ${index}: missing Apple Music metadata.`);
+  }
+  if (!validateString(am.storefront)) {
+    throw new Error(`Invalid card at index ${index}: missing am.storefront.`);
+  }
+  if (!validateString(am.songId)) {
+    throw new Error(`Invalid card at index ${index}: missing am.songId.`);
+  }
+  if (!validateString(am.matchedTitle)) {
+    throw new Error(`Invalid card at index ${index}: missing am.matchedTitle.`);
+  }
+  if (!validateString(am.matchedArtist)) {
+    throw new Error(`Invalid card at index ${index}: missing am.matchedArtist.`);
+  }
+  if (typeof am.explicit !== 'boolean') {
+    throw new Error(`Invalid card at index ${index}: missing am.explicit.`);
+  }
+  if (!validateString(am.lastVerifiedAt)) {
+    throw new Error(`Invalid card at index ${index}: missing am.lastVerifiedAt.`);
+  }
+
+  return {
+    title: card.title.trim(),
+    artist: card.artist.trim(),
+    year: card.year,
+    am: {
+      storefront: am.storefront.trim(),
+      songId: am.songId.trim(),
+      isrc: validateString(am.isrc) ? am.isrc.trim() : null,
+      matchedTitle: am.matchedTitle.trim(),
+      matchedArtist: am.matchedArtist.trim(),
+      matchedAlbum: validateString(am.matchedAlbum) ? am.matchedAlbum.trim() : null,
+      durationMs: typeof am.durationMs === 'number' ? am.durationMs : null,
+      explicit: am.explicit,
+      lastVerifiedAt: am.lastVerifiedAt.trim(),
+    },
+  };
+};
+
+const loadDeck = (): Card[] => {
+  let rawDeck: unknown;
+  try {
+    rawDeck = JSON.parse(readFileSync(DECK_PATH, 'utf-8')) as unknown;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'unknown error';
+    throw new Error(
+      `Unable to load deck from ${DECK_PATH}: ${detail}. Run \"npm run deck:generate\" to build deck.json.`
+    );
+  }
+
+  if (!Array.isArray(rawDeck)) {
+    throw new Error(`Invalid deck.json: expected an array.`);
+  }
+
+  const deck = rawDeck.map((entry, index) => validateCard(entry, index));
+  if (deck.length === 0) {
+    throw new Error('Invalid deck.json: deck is empty.');
+  }
+  return deck;
+};
+
+const appendUnavailableLog = (entry: {
+  roomCode: string;
+  playerId: string;
+  title: string;
+  artist: string;
+  songId: string;
+  reason: string;
+}) => {
+  mkdirSync(dirname(UNAVAILABLE_LOG_PATH), { recursive: true });
+  appendFileSync(
+    UNAVAILABLE_LOG_PATH,
+    `${JSON.stringify({
+      ...entry,
+      happenedAt: new Date().toISOString(),
+      source: 'runtime-playback',
+    })}\n`
+  );
+};
+
+const baseDeck: Card[] = loadDeck();
 
 const normalizeUserAgent = (userAgent: string | string[] | undefined): string => {
   if (!userAgent) {
@@ -616,6 +741,56 @@ const handleTurnTimeout = (roomCode: string) => {
   resolveLock(room, 'TIMEOUT');
 };
 
+const skipUnavailableTurn = (
+  room: RoomState,
+  payload: TurnSkipUnavailablePayload
+): AckErr | null => {
+  if (room.isPaused) {
+    return err('GAME_PAUSED', 'Game is paused.');
+  }
+  if (room.phase !== 'PLACE') {
+    return err('INVALID_PHASE', 'Not accepting skips right now.');
+  }
+  if (!room.currentCard) {
+    return err('NO_ACTIVE_CARD', 'No active card to skip.');
+  }
+  if (room.currentCard.am.songId !== payload.songId) {
+    return err('STALE_CARD', 'The active card has changed.');
+  }
+
+  const activePlayer = ensureActivePlayer(room);
+  if (!activePlayer) {
+    return err('PLAYER_NOT_FOUND', 'Active player not found.');
+  }
+
+  clearRoomTimers(room);
+  const skippedCard = room.currentCard;
+  room.currentCard = null;
+  room.tentativePlacementIndex = null;
+  room.turnExpiresAt = null;
+  room.phase = 'DEAL';
+
+  appendUnavailableLog({
+    roomCode: room.code,
+    playerId: activePlayer.id,
+    title: payload.title,
+    artist: payload.artist,
+    songId: payload.songId,
+    reason: payload.reason,
+  });
+
+  io.to(room.code).emit(TURN_SKIPPED_EVENT, {
+    playerId: activePlayer.id,
+    reason: 'UNAVAILABLE_AUDIO',
+    card: skippedCard,
+  });
+
+  bumpSeq(room);
+  emitSnapshot(room);
+  startTurn(room);
+  return null;
+};
+
 io.on('connection', (socket) => {
   socket.on('room.create', (_payload: unknown, ack?: Ack<{ roomCode: string; hostSessionToken: string }>) => {
     const roomCode = nextRoomCode();
@@ -891,6 +1066,41 @@ io.on('connection', (socket) => {
     });
 
     startTurn(room);
+    ack?.(ok());
+  });
+
+  socket.on(TURN_SKIP_UNAVAILABLE_EVENT, (payload: TurnSkipUnavailablePayload, ack?: Ack) => {
+    const connection = socketIndex.get(socket.id);
+    if (!connection || connection.role !== 'host') {
+      ack?.(err('FORBIDDEN', 'Only the host can skip unavailable songs.'));
+      return;
+    }
+
+    if (!payload?.roomCode || !payload?.songId || !payload?.title || !payload?.artist || !payload?.reason) {
+      ack?.(err('INVALID_PAYLOAD', 'roomCode, songId, title, artist, and reason are required.'));
+      return;
+    }
+    if (payload.roomCode !== connection.roomCode) {
+      ack?.(err('ROOM_MISMATCH', 'roomCode does not match host session.'));
+      return;
+    }
+
+    const room = rooms.get(connection.roomCode);
+    if (!room) {
+      ack?.(err('ROOM_NOT_FOUND', 'Room not found.'));
+      return;
+    }
+    if (room.terminatedAt) {
+      ack?.(err('ROOM_TERMINATED', 'Room has been terminated.'));
+      return;
+    }
+
+    const skipError = skipUnavailableTurn(room, payload);
+    if (skipError) {
+      ack?.(skipError);
+      return;
+    }
+
     ack?.(ok());
   });
 

@@ -25,10 +25,14 @@ import {
   GAME_TERMINATED_EVENT,
   GAME_PAUSE_EVENT,
   GAME_RESUME_EVENT,
+  TURN_SKIPPED_EVENT,
+  TURN_SKIP_UNAVAILABLE_EVENT,
   type Card,
   type GameTerminationPayload,
   type RoomSnapshot,
   type TimelineItem,
+  type TurnSkipUnavailablePayload,
+  type TurnSkippedPayload,
   type TurnReveal,
 } from '@/lib/game-types';
 
@@ -57,12 +61,64 @@ type AckErr = { ok: false; code: string; message: string };
 
 type AckResponse = AckOk | AckErr;
 
+type MusicPlayer = {
+  setQueue(options: { song: string }): Promise<unknown> | unknown;
+  play(): Promise<unknown> | unknown;
+  pause(): void;
+  stop?: () => Promise<unknown> | unknown;
+};
+
 const TURN_DURATION_SECONDS = 40;
 const REVEAL_DURATION_MS = 3000;
 const REVEAL_FLIP_DURATION_MS = 700;
 const REVEAL_EXIT_DURATION_MS = 500;
 const REVEAL_EXIT_DELAY_MS = Math.max(0, REVEAL_DURATION_MS - REVEAL_EXIT_DURATION_MS);
 const TERMINATION_REDIRECT_DELAY_MS = 1500;
+const MUSICKIT_SCRIPT_SRC = 'https://js-cdn.music.apple.com/musickit/v3/musickit.js';
+
+let musicKitScriptPromise: Promise<void> | null = null;
+
+const ensureMusicKitScript = async (): Promise<void> => {
+  if (typeof window === 'undefined') {
+    throw new Error('MusicKit requires a browser environment.');
+  }
+  if (window.MusicKit) {
+    return;
+  }
+  if (!musicKitScriptPromise) {
+    musicKitScriptPromise = new Promise<void>((resolve, reject) => {
+      const existing = document.querySelector<HTMLScriptElement>('script[data-backtrack-musickit="true"]');
+      if (existing) {
+        if (window.MusicKit) {
+          resolve();
+          return;
+        }
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Unable to load MusicKit script.')), {
+          once: true,
+        });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = MUSICKIT_SCRIPT_SRC;
+      script.async = true;
+      script.dataset.backtrackMusickit = 'true';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Unable to load MusicKit script.'));
+      document.head.appendChild(script);
+    });
+  }
+  try {
+    await musicKitScriptPromise;
+  } catch (error) {
+    musicKitScriptPromise = null;
+    throw error;
+  }
+  if (!window.MusicKit) {
+    throw new Error('MusicKit failed to initialize.');
+  }
+};
 
 export default function HostGamePage() {
   const params = useParams();
@@ -73,10 +129,12 @@ export default function HostGamePage() {
   const socketRef = useRef<ReturnType<typeof createSocket> | null>(null);
   const roomRef = useRef<RoomSnapshot | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const musicRef = useRef<MusicPlayer | null>(null);
+  const musicInitPromiseRef = useRef<Promise<MusicPlayer> | null>(null);
   const isPausedRef = useRef(false);
   const wasFullscreenBeforePauseRef = useRef(false);
   const resumePreviewOnResumeRef = useRef(false);
+  const skipRequestKeyRef = useRef<string | null>(null);
   const lookupIdRef = useRef(0);
   const revealTimerRef = useRef<number | null>(null);
   const revealContentTimerRef = useRef<number | null>(null);
@@ -99,10 +157,7 @@ export default function HostGamePage() {
   const [revealDisplay, setRevealDisplay] = useState<TurnReveal | null>(null);
   const [revealContentVisible, setRevealContentVisible] = useState(false);
   const [revealExitActive, setRevealExitActive] = useState(false);
-  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ready' | 'blocked' | 'unavailable'>(
-    'idle'
-  );
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<'idle' | 'loading' | 'ready' | 'unavailable'>('idle');
   const [isPlaying, setIsPlaying] = useState(false);
   const [showEndGameConfirm, setShowEndGameConfirm] = useState(false);
   const [endGameBusy, setEndGameBusy] = useState(false);
@@ -147,26 +202,108 @@ export default function HostGamePage() {
   }, []);
 
   const stopPreview = useCallback((resetState = true) => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-      audio.load();
+    const player = musicRef.current;
+    if (player) {
+      if (player.stop) {
+        void Promise.resolve(player.stop()).catch(() => {});
+      } else {
+        player.pause();
+      }
     }
     if (resetState) {
       setIsPlaying(false);
-      setPreviewUrl(null);
       setPreviewState('idle');
     }
   }, []);
 
   const pausePreview = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
+    const player = musicRef.current;
+    if (player) {
+      player.pause();
     }
     setIsPlaying(false);
   }, []);
+
+  const ensureMusicKitPlayer = useCallback(async (): Promise<MusicPlayer> => {
+    if (musicRef.current) {
+      return musicRef.current;
+    }
+    if (musicInitPromiseRef.current) {
+      return musicInitPromiseRef.current;
+    }
+
+    const initPromise = (async () => {
+      await ensureMusicKitScript();
+      const tokenResponse = await fetch('/api/apple-music/developer-token', { cache: 'no-store' });
+      if (!tokenResponse.ok) {
+        throw new Error('Unable to fetch Apple Music developer token.');
+      }
+      const tokenPayload = (await tokenResponse.json()) as { developerToken?: string; error?: string };
+      const developerToken = tokenPayload.developerToken?.trim();
+      if (!developerToken) {
+        throw new Error(tokenPayload.error ?? 'Missing Apple Music developer token.');
+      }
+
+      const musicKit = window.MusicKit;
+      if (!musicKit) {
+        throw new Error('MusicKit is unavailable.');
+      }
+
+      await Promise.resolve(
+        musicKit.configure({
+          developerToken,
+          app: {
+            name: 'Backtrack',
+            build: '1.0.0',
+          },
+        })
+      );
+
+      const player = musicKit.getInstance();
+      musicRef.current = player;
+      return player;
+    })();
+
+    musicInitPromiseRef.current = initPromise;
+    try {
+      return await initPromise;
+    } finally {
+      musicInitPromiseRef.current = null;
+    }
+  }, []);
+
+  const requestSkipUnavailable = useCallback(
+    (card: Card, reason: string) => {
+      if (isMock) {
+        return;
+      }
+      const socket = socketRef.current;
+      if (!socket || !roomCode) {
+        return;
+      }
+      const songId = card.am?.songId?.trim() ?? '';
+      const requestKey = `${songId}:${card.title}:${card.artist}:${card.year}`;
+      if (!songId || skipRequestKeyRef.current === requestKey) {
+        return;
+      }
+
+      skipRequestKeyRef.current = requestKey;
+      setStatus('Preview unavailable. Skipping card...');
+      const payload: TurnSkipUnavailablePayload = {
+        roomCode,
+        songId,
+        title: card.title,
+        artist: card.artist,
+        reason,
+      };
+      socket.emit(TURN_SKIP_UNAVAILABLE_EVENT, payload, (response: AckResponse) => {
+        if (!response.ok) {
+          setError(response.message ?? 'Unable to skip unavailable card.');
+        }
+      });
+    },
+    [isMock, roomCode]
+  );
 
   const handleTermination = useCallback(
     (
@@ -260,86 +397,90 @@ export default function HostGamePage() {
     });
   };
 
-  const attemptPlay = useCallback(async (options?: { ignorePaused?: boolean }) => {
-    if (isPaused && !options?.ignorePaused) {
-      return;
-    }
-    const audio = audioRef.current;
-    if (!audio) {
-      return;
-    }
-    try {
-      await audio.play();
-      setIsPlaying(true);
-      setPreviewState('ready');
-    } catch {
-      setPreviewState('blocked');
-    }
-  }, [isPaused]);
+  const attemptPlay = useCallback(
+    async (options?: { ignorePaused?: boolean }) => {
+      if (isPaused && !options?.ignorePaused) {
+        return;
+      }
+      const player = musicRef.current;
+      if (!player) {
+        return;
+      }
+      try {
+        await Promise.resolve(player.play());
+        setIsPlaying(true);
+        setPreviewState('ready');
+      } catch {
+        setIsPlaying(false);
+        setPreviewState('unavailable');
+      }
+    },
+    [isPaused]
+  );
 
   const togglePlay = () => {
     if (isPaused) {
       return;
     }
-    const audio = audioRef.current;
-    if (!audio) {
+    const player = musicRef.current;
+    if (!player) {
       return;
     }
-    if (audio.paused) {
+    if (!isPlaying) {
       void attemptPlay();
     } else {
-      audio.pause();
+      player.pause();
       setIsPlaying(false);
     }
   };
 
-  const startPreview = useCallback(async (card: Card) => {
-    stopPreview();
-    const lookupId = lookupIdRef.current + 1;
-    lookupIdRef.current = lookupId;
-    setPreviewState('loading');
+  const startPreview = useCallback(
+    async (card: Card) => {
+      stopPreview();
+      const lookupId = lookupIdRef.current + 1;
+      lookupIdRef.current = lookupId;
+      setPreviewState('loading');
 
-    const query = encodeURIComponent(`${card.title} ${card.artist}`);
-    try {
-      const response = await fetch(
-        `https://itunes.apple.com/search?term=${query}&entity=song&limit=1`
-      );
-      const data = await response.json();
-      if (lookupIdRef.current !== lookupId) {
-        return;
-      }
-      const preview = data?.results?.[0]?.previewUrl as string | undefined;
-      if (!preview) {
+      const songId = card.am?.songId?.trim() ?? '';
+      if (!songId) {
+        if (lookupIdRef.current !== lookupId) {
+          return;
+        }
         setPreviewState('unavailable');
+        requestSkipUnavailable(card, 'MISSING_SONG_ID');
         return;
       }
-      setPreviewUrl(preview);
-      const audio = audioRef.current ?? new Audio();
-      audioRef.current = audio;
-      audio.src = preview;
-      audio.currentTime = 0;
-      audio.onended = () => setIsPlaying(false);
-      if (isPausedRef.current) {
-        resumePreviewOnResumeRef.current = true;
-        setIsPlaying(false);
-        setPreviewState('ready');
-        return;
-      }
+
       try {
-        await audio.play();
+        const player = await ensureMusicKitPlayer();
+        if (lookupIdRef.current !== lookupId) {
+          return;
+        }
+        await Promise.resolve(player.setQueue({ song: songId }));
+        if (isPausedRef.current) {
+          resumePreviewOnResumeRef.current = true;
+          setIsPlaying(false);
+          setPreviewState('ready');
+          return;
+        }
+        await Promise.resolve(player.play());
+        if (lookupIdRef.current !== lookupId) {
+          player.pause();
+          return;
+        }
         setIsPlaying(true);
         setPreviewState('ready');
       } catch {
+        if (lookupIdRef.current !== lookupId) {
+          return;
+        }
         setIsPlaying(false);
-        setPreviewState('blocked');
+        setPreviewState('unavailable');
+        requestSkipUnavailable(card, 'PLAYBACK_FAILED');
       }
-    } catch {
-      if (lookupIdRef.current !== lookupId) {
-        return;
-      }
-      setPreviewState('unavailable');
-    }
-  }, [stopPreview]);
+    },
+    [ensureMusicKitPlayer, requestSkipUnavailable, stopPreview]
+  );
 
   useEffect(() => {
     if (isPaused) {
@@ -379,7 +520,6 @@ export default function HostGamePage() {
       setStatus(mock.status);
       setError(mock.error);
       setPreviewState(mock.previewState);
-      setPreviewUrl(mock.previewUrl);
       setIsPlaying(mock.isPlaying);
       return;
     }
@@ -433,6 +573,7 @@ export default function HostGamePage() {
       payload.timelines.forEach((entry) => {
         timelineMap[entry.playerId] = entry.timeline;
       });
+      skipRequestKeyRef.current = null;
       clearRevealState();
       setTimelines(timelineMap);
       setCurrentCard(payload.card);
@@ -450,6 +591,13 @@ export default function HostGamePage() {
 
     socket.on('turn.removed', () => {
       setTentativePlacementIndex(null);
+    });
+
+    socket.on(TURN_SKIPPED_EVENT, (_payload: TurnSkippedPayload) => {
+      setStatus('Preview unavailable. Dealing replacement card...');
+      setCurrentCard(null);
+      setTentativePlacementIndex(null);
+      stopPreview();
     });
 
     socket.on('turn.reveal', (payload: TurnReveal) => {
@@ -834,10 +982,8 @@ export default function HostGamePage() {
         <AudioPreviewControls
           phase={room?.phase}
           previewState={previewState}
-          previewUrl={previewUrl}
           isPlaying={isPlaying}
           isPaused={isPaused}
-          onAttemptPlay={attemptPlay}
           onTogglePlay={togglePlay}
         />
       </section>

@@ -48,7 +48,7 @@ type TurnReveal = {
   reason: string;
 };
 
-type PreviewState = 'idle' | 'loading' | 'ready' | 'blocked' | 'unavailable';
+type PreviewState = 'idle' | 'loading' | 'ready' | 'unavailable';
 
 export type MockHostLobbyState = {
   room: HostRoomSnapshot;
@@ -67,7 +67,6 @@ export type MockHostGameState = {
   tentativePlacementIndex: number | null;
   reveal: TurnReveal | null;
   previewState: PreviewState;
-  previewUrl: string | null;
   isPlaying: boolean;
 };
 
@@ -213,8 +212,7 @@ export const getMockHostGameState = (state: string | null): MockHostGameState =>
     currentCard: { ...mockCurrentCard },
     tentativePlacementIndex: 1,
     reveal: null,
-    previewState: 'blocked',
-    previewUrl: null,
+    previewState: 'unavailable',
     isPlaying: false,
   };
 
@@ -251,7 +249,6 @@ export const getMockHostGameState = (state: string | null): MockHostGameState =>
         reason: 'mock',
       },
       previewState: 'ready',
-      previewUrl: 'mock',
     };
   }
 
