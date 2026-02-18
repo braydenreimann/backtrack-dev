@@ -1,6 +1,6 @@
 # Backtrack MVP Context (Apple Music Catalog IDs)
 
-**This file currently outdated. Please ignore it temporarily.**
+**This file currently outdated. Please ignore it right now.**
 
 This document defines the **current MVP assumptions and constraints** for Backtrack.  
 It supersedes any earlier Spotify-based MVP context.
